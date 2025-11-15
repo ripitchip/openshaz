@@ -1,0 +1,130 @@
+Vagrant.configure("2") do |config|
+  config.vm.box = "ubuntu/jammy64"
+  config.vm.box_version = "20231010.0.0"
+
+  n = 3
+
+  # -------------------------
+  # Worker VMs (optional)
+  # -------------------------
+  (1..n).each do |i|
+    config.vm.define "worker#{i}" do |worker|
+      worker.vm.hostname = "worker#{i}"
+      worker.vm.network "private_network", ip: "192.168.56.#{10 + i}"
+
+      worker.vm.provider "virtualbox" do |vb|
+        vb.name   = "worker#{i}"
+        vb.memory = 2048
+        vb.cpus   = 2
+      end
+    end
+  end
+
+  # -------------------------
+  # MinIO VM
+  # -------------------------
+  config.vm.define "minio" do |minio|
+    minio.vm.hostname = "minio"
+    minio.vm.network "private_network", ip: "192.168.56.50"
+
+    minio.vm.provider "virtualbox" do |vb|
+      vb.name   = "minio"
+      vb.memory = 2048
+      vb.cpus   = 2
+    end
+
+    minio.vm.provision "shell", inline: <<-SHELL
+      echo "Installing MinIO…"
+      apt-get update -y
+      apt-get install -y wget
+
+      mkdir -p /usr/local/bin /etc/minio /var/minio
+
+      wget https://dl.min.io/server/minio/release/linux-amd64/minio -O /usr/local/bin/minio
+      chmod +x /usr/local/bin/minio
+
+      # MinIO systemd service
+      cat <<EOF >/etc/systemd/system/minio.service
+[Unit]
+Description=MinIO Object Storage Server
+After=network.target
+
+[Service]
+User=root
+Group=root
+ExecStart=/usr/local/bin/minio server /var/minio --console-address ":9001"
+Restart=always
+LimitNOFILE=65536
+
+Environment="MINIO_ROOT_USER=minioadmin"
+Environment="MINIO_ROOT_PASSWORD=minioadmin"
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+      systemctl daemon-reload
+      systemctl enable minio
+      systemctl start minio
+
+      echo "MinIO installed."
+      echo "API:     http://192.168.56.50:9000"
+      echo "Console: http://192.168.56.50:9001"
+    SHELL
+  end
+
+
+  # -------------------------
+  # PostgreSQL VM
+  # -------------------------
+  config.vm.define "postgres" do |db|
+    db.vm.hostname = "postgres"
+    db.vm.network "private_network", ip: "192.168.56.60"
+
+    db.vm.provider "virtualbox" do |vb|
+      vb.name   = "postgres"
+      vb.memory = 1024
+      vb.cpus   = 1
+    end
+
+    db.vm.provision "shell", inline: <<-SHELL
+      echo "Installing PostgreSQL from official Apt repository…"
+
+      # Install required packages
+      apt-get update -y
+      apt-get install -y curl ca-certificates gnupg2 lsb-release
+
+      # Install postgresql-common (required for pgdg script)
+      apt-get install -y postgresql-common
+
+      # Add PostgreSQL Apt repository automatically
+      /usr/share/postgresql-common/pgdg/apt.postgresql.org.sh
+
+      # Update package list
+      apt-get update -y
+
+      # Install PostgreSQL version 18
+      apt-get install -y postgresql-18 postgresql-client-18 postgresql-contrib
+
+      # Start PostgreSQL service
+      systemctl enable postgresql
+      systemctl start postgresql
+
+      # Create user and database
+      sudo -u postgres psql -c "CREATE USER music WITH PASSWORD 'musicpass';"
+      sudo -u postgres psql -c "CREATE DATABASE musicdb OWNER music;"
+
+      # Allow access from private network
+      echo "host all all 192.168.56.0/24 md5" >> /etc/postgresql/18/main/pg_hba.conf
+      echo "listen_addresses='*'" >> /etc/postgresql/18/main/postgresql.conf
+
+      systemctl restart postgresql
+
+      echo "PostgreSQL installed."
+      echo "Host:     192.168.56.60"
+      echo "Database: musicdb"
+      echo "User:     music"
+      echo "Password: musicpass"
+    SHELL
+  end
+end
