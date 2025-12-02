@@ -1,0 +1,20 @@
+[project]
+name = "Openshaz"
+version = "0.0.0"
+description = ""
+readme = "README.md"
+license = "GPL-3.0-only"
+license-files = ["LICEN[CS]E*"]
+authors = [
+    { name = "Ripitchip", email = "contact@example.com" },
+    { name = "MorganKryze", email = "contact@libresoftware.cloud" },
+]
+requires-python = ">=3.11"
+dependencies = ["numpy>=2.3.2", "librosa>=0.11.0", "loguru>=0.7.0"]
+
+[project.urls]
+Homepage = "https://github.com/ripitchip/openshaz"
+Documentation = "https://github.com/ripitchip/openshaz"
+Repository = "https://github.com/ripitchip/openshaz.git"
+Issues = "https://github.com/ripitchip/openshaz/issues"
+# Changelog = "https://github.com/ripitchip/openshaz/tree/main/.github/CHANGELOG"
