@@ -10,7 +10,12 @@ authors = [
     { name = "MorganKryze", email = "contact@libresoftware.cloud" },
 ]
 requires-python = ">=3.11"
-dependencies = ["numpy>=2.3.2", "librosa>=0.11.0", "loguru>=0.7.0"]
+dependencies = [
+    "numpy>=2.3.2",
+    "librosa>=0.11.0",
+    "loguru>=0.7.0",
+    "kagglehub>=0.3.13",
+]
 
 [project.urls]
 Homepage = "https://github.com/ripitchip/openshaz"
