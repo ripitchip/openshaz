@@ -10,16 +10,7 @@ from models.audio import audio
 from modules.extraction import get_features
 
 
-def _init_worker(log_level: str):
-    """Initialize worker process with proper logger configuration.
-
-    :param log_level: Log level to set (DEBUG or INFO)
-    """
-    logger.remove()
-    logger.add(sys.stderr, level=log_level)
-
-
-def _download_dataset():
+def _download_dataset() -> None:
     """Download the GTZAN dataset from Kaggle and store it in the data/raw directory."""
     target_dir = Path(__file__).parent.parent.parent / "data" / "raw"
     logger.debug(f"Target directory for dataset: {target_dir.as_posix()}")
@@ -45,6 +36,15 @@ def _list_audio_filepaths() -> list[Path]:
     audio_files = sorted(target_dir.rglob("*.wav"))
     logger.info(f"Found {len(audio_files)} audio files in the dataset.")
     return audio_files
+
+
+def _init_worker(log_level: str) -> None:
+    """Initialize worker process with proper logger configuration.
+
+    :param log_level: Log level to set (DEBUG or INFO)
+    """
+    logger.remove()
+    logger.add(sys.stderr, level=log_level)
 
 
 def _process_single_audio(args: tuple[int, Path]) -> audio:
