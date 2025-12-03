@@ -1,11 +1,14 @@
-import argparse
 import sys
 import time
-
+import argparse
+import numpy as np
+import pandas as pd
 from loguru import logger
 
+from models import audio
 from modules.dataset import get_audio_dataset, get_features_dataframe
-from modules.similarity import compare_metrics
+from modules.extraction import get_features
+from modules.similarity import SimilarityEngine, compare_metrics
 
 
 def parse_arguments():
@@ -36,6 +39,12 @@ def parse_arguments():
         type=int,
         default=5,
         help="Number of top similar results (default: 5)",
+    )
+    parser.add_argument(
+        "--test-audio-path",
+        type=str,
+        default=None,
+        help="Path to the test audio file",
     )
     return parser.parse_args()
 
@@ -97,6 +106,26 @@ def compare_different_metrics(
     logger.info(f"\nComparison results:\n{comparison_df}")
 
 
+def measure_similarity(
+    df: pd.DataFrame, audio: np.ndarray, metric: str = "cosine", top_k: int = 5
+) -> None:
+    """Measure similarity using the specified metric.
+
+    :param df: DataFrame with audio features
+    :param audio: Audio data to compare
+    :param metric: Similarity metric to use
+    :param top_k: Number of top similar results to return
+    :return: List of similarity results
+    """
+    engine = SimilarityEngine(metric=metric, normalize=True)
+    engine.fit(df)
+
+    results = engine.find_similar(audio, top_k=top_k)
+    logger.info(f"Top {top_k} similar results using {metric} metric:")
+    for rank, (idx, score) in enumerate(results, start=1):
+        logger.info(f"{rank}. Index: {idx}, Similarity Score: {score:.4f}")
+
+
 @logger.catch
 def __main__():
     start_time = time.time()
@@ -119,6 +148,15 @@ def __main__():
             top_k=args.top_k,
             random_state=42,
         )
+
+    test_audio = audio(path=args.test_audio_path)
+    test_audio.features = get_features(test_audio)
+    measure_similarity(
+        df=df,
+        audio=test_audio.features,
+        metric=args.metric,
+        top_k=args.top_k,
+    )
 
     elapsed_time = time.time() - start_time
     logger.info(f"Execution completed in {elapsed_time:.2f} seconds.")
