@@ -5,12 +5,10 @@ import time
 from loguru import logger
 
 from modules.dataset import get_audio_dataset, get_features_dataframe
+from modules.similarity import compare_metrics, train_test_similarity
 
 
-@logger.catch
-def __main__():
-    start_time = time.time()
-
+def parse_arguments():
     parser = argparse.ArgumentParser(description="Audio Feature Extraction Module")
     parser.add_argument("--debug", action="store_true", help="Run with debug console")
     parser.add_argument("--multi", action="store_true", help="Enable multiprocessing")
@@ -20,29 +18,105 @@ def __main__():
     parser.add_argument(
         "--recreate", action="store_true", help="Force recreation of dataset cache"
     )
-    args = parser.parse_args()
+    parser.add_argument(
+        "--compare-metrics",
+        action="store_true",
+        help="Compare different similarity metrics",
+    )
+    parser.add_argument(
+        "--metric",
+        type=str,
+        default="cosine",
+        choices=["cosine", "euclidean", "manhattan"],
+        help="Similarity metric to use (default: cosine)",
+    )
+    parser.add_argument(
+        "--top-k",
+        type=int,
+        default=5,
+        help="Number of top similar results (default: 5)",
+    )
+    return parser.parse_args()
 
+
+def start_logging(is_debug: bool) -> None:
     logger.remove()
-    log_level = "DEBUG" if args.debug else "INFO"
+    log_level = "DEBUG" if is_debug else "INFO"
     logger.add(sys.stderr, level=log_level)
 
-    logger.info("Starting audio feature extraction module.")
+    logger.info("Starting OpenShaz, Open-source audio similarity tool.")
+
+
+def create_dataframe(
+    limit: int | None, log_level: str, multi: bool, recreate: bool
+) -> None:
+    """Create a DataFrame with audio features from the dataset.
+
+    :param limit: Limit number of audio files to import
+    :param log_level: Logging level
+    :param multi: Use multiprocessing for feature extraction
+    :param recreate: Force recreation of dataset cache
+    :return: DataFrame with audio features
+    """
+    logger.debug("Importing audio dataset.")
     dataset = get_audio_dataset(
-        limit=30 if args.limit else None,
+        limit=30 if limit else None,
         log_level=log_level,
-        use_multiprocessing=args.multi,
-        recreate=args.recreate,
+        use_multiprocessing=multi,
+        recreate=recreate,
     )
     logger.info(f"Imported {len(dataset)} audio files from dataset.")
 
-    logger.info("Extracting features and creating DataFrame.")
-
+    logger.debug("Extracting features and creating DataFrame.")
     df = get_features_dataframe(
         dataset=dataset,
-        limit=30 if args.limit else None,
-        recreate=args.recreate,
+        limit=30 if limit else None,
+        recreate=recreate,
     )
     logger.info(f"Created DataFrame with shape: {df.shape}")
+    return df
+
+
+def compare_different_metrics(
+    df, test_size: float = 0.2, top_k: int = 5, random_state: int = 42
+):
+    """Compare different similarity metrics on the same dataset.
+
+    :param df: DataFrame with audio features
+    :param test_size: Proportion of dataset to use for testing
+    :param top_k: Number of top matches to consider
+    :param random_state: Random seed for reproducibility
+    :return: DataFrame comparing metrics
+    """
+    logger.info("Comparing similarity metrics...")
+    comparison_df = compare_metrics(
+        df=df, test_size=test_size, top_k=top_k, random_state=random_state
+    )
+    logger.info(f"\nComparison results:\n{comparison_df}")
+
+
+@logger.catch
+def __main__():
+    start_time = time.time()
+
+    args = parse_arguments()
+
+    start_logging(is_debug=args.debug)
+
+    df = create_dataframe(
+        limit=args.limit,
+        log_level="DEBUG" if args.debug else "INFO",
+        multi=args.multi,
+        recreate=args.recreate,
+    )
+
+    if args.compare_metrics:
+        compare_different_metrics(
+            df=df,
+            test_size=0.2,
+            top_k=args.top_k,
+            random_state=42,
+        )
 
     elapsed_time = time.time() - start_time
     logger.info(f"Execution completed in {elapsed_time:.2f} seconds.")

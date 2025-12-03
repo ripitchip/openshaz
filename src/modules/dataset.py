@@ -89,7 +89,7 @@ def _download_dataset() -> None:
     logger.debug("Path to dataset files:", path)
 
     shutil.copytree(path, target_dir, dirs_exist_ok=True)
-    logger.info("Dataset copied to:", target_dir)
+    logger.info(f"Dataset copied to: ${target_dir}")
 
 
 def _list_audio_filepaths() -> list[Path]:
@@ -114,11 +114,11 @@ def _init_worker(log_level: str) -> None:
     logger.add(sys.stderr, level=log_level)
 
 
-def _process_single_audio(args: tuple[int, Path]) -> audio:
+def _process_single_audio(args: tuple[int, Path]) -> audio | None:
     """Process a single audio file (for multiprocessing).
 
     :param args: Tuple of (id, path)
-    :return: audio dataclass instance with features
+    :return: audio dataclass instance with features, or None if processing failed
     """
     id_counter, path = args
     audio_file = audio(
@@ -126,8 +126,13 @@ def _process_single_audio(args: tuple[int, Path]) -> audio:
         name=path.stem,
         path=path,
     )
-    audio_file.features = get_features(audio_file)
-    return audio_file
+
+    try:
+        audio_file.features = get_features(audio_file)
+        return audio_file
+    except Exception as e:
+        logger.warning(f"Failed to process {path.name}: {type(e).__name__} - {str(e)}")
+        return None
 
 
 def _get_dataframe_cache_path(limit: int | None = None) -> Path:
@@ -247,28 +252,43 @@ def _import_audio_from_dataset(
             processes=num_processes, initializer=_init_worker, initargs=(log_level,)
         ) as pool:
             args = [(i, path) for i, path in enumerate(audio_paths)]
-            audio_files = list(
+            results = list(
                 tqdm(
                     pool.imap(_process_single_audio, args),
                     total=len(audio_paths),
                     desc="Processing audio files",
                 )
             )
+            # Filter out None values (failed processing)
+            audio_files = [af for af in results if af is not None]
+            failed_count = len(results) - len(audio_files)
+            if failed_count > 0:
+                logger.warning(f"Failed to process {failed_count} audio file(s)")
     else:
         audio_files = []
+        failed_count = 0
         for id_counter, path in enumerate(
             tqdm(audio_paths, desc="Processing audio files")
         ):
-            audio_file = audio(
-                id=id_counter,
-                name=path.stem,
-                path=path,
-            )
-            audio_file.features = get_features(audio_file)
-            audio_files.append(audio_file)
-            logger.debug(
-                f"Imported audio file: {audio_file.name}, assigned ID: {audio_file.id}"
-            )
+            try:
+                audio_file = audio(
+                    id=id_counter,
+                    name=path.stem,
+                    path=path,
+                )
+                audio_file.features = get_features(audio_file)
+                audio_files.append(audio_file)
+                logger.debug(
+                    f"Imported audio file: {audio_file.name}, assigned ID: {audio_file.id}"
+                )
+            except Exception as e:
+                logger.warning(
+                    f"Failed to process {path.name}: {type(e).__name__} - {str(e)}"
+                )
+                failed_count += 1
+
+        if failed_count > 0:
+            logger.warning(f"Failed to process {failed_count} audio file(s)")
 
     return audio_files
 

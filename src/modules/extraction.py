@@ -1,11 +1,17 @@
 """Module for extracting audio features using librosa."""
 
+import warnings
+from pathlib import Path
+
 import librosa
 import numpy as np
 from loguru import logger
-from pathlib import Path
 
 from models.audio import audio
+
+# Suppress librosa warnings about deprecated audioread
+warnings.filterwarnings("ignore", category=FutureWarning, module="librosa")
+warnings.filterwarnings("ignore", category=UserWarning, module="librosa")
 
 
 def _import_audio_from_path(path: Path) -> tuple[np.ndarray, int]:
@@ -18,9 +24,14 @@ def _import_audio_from_path(path: Path) -> tuple[np.ndarray, int]:
         raise ValueError("Unsupported audio file format.")
     elif not path.exists():
         raise FileNotFoundError(f"Audio file not found at path: {path}")
-    y, sr = librosa.load(path)
-    y, _ = librosa.effects.trim(y)
-    return y, sr
+
+    try:
+        y, sr = librosa.load(path)
+        y, _ = librosa.effects.trim(y)
+        return y, sr
+    except Exception as e:
+        logger.debug(f"Failed to load {path.name}: {type(e).__name__}")
+        raise
 
 
 def _get_length(y: np.ndarray) -> int:
