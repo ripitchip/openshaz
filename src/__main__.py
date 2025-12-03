@@ -5,10 +5,11 @@ import time
 from loguru import logger
 
 from modules.dataset import get_audio_dataset, get_features_dataframe
-from modules.similarity import compare_metrics, train_test_similarity
+from modules.similarity import compare_metrics
 
 
 def parse_arguments():
+    """Parse command-line arguments."""
     parser = argparse.ArgumentParser(description="Audio Feature Extraction Module")
     parser.add_argument("--debug", action="store_true", help="Run with debug console")
     parser.add_argument("--multi", action="store_true", help="Enable multiprocessing")
@@ -40,6 +41,7 @@ def parse_arguments():
 
 
 def start_logging(is_debug: bool) -> None:
+    """Initialize logging configuration."""
     logger.remove()
     log_level = "DEBUG" if is_debug else "INFO"
     logger.add(sys.stderr, level=log_level)
