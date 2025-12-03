@@ -3,6 +3,9 @@ import kagglehub
 from pathlib import Path
 from loguru import logger
 
+from models.audio import audio
+from modules.extraction import get_features
+
 
 def create_dataset():
     """Create the GTZAN dataset from Kaggle if not already present."""
@@ -12,6 +15,8 @@ def create_dataset():
         _download_dataset()
     else:
         logger.info("GTZAN dataset already exists locally. Skipping download.")
+
+    return _import_audio_from_dataset()
 
 
 def _download_dataset():
@@ -28,20 +33,32 @@ def _download_dataset():
     logger.info("Dataset copied to:", target_dir)
 
 
-def _list_audio_files():
-    """List all audio files in the GTZAN dataset."""
+def _list_audio_filepaths() -> list[Path]:
+    """List all audio files in the GTZAN dataset.
+    
+    :return: List of Paths to audio files
+    """
     target_dir = Path(__file__).parent.parent / "data" / "raw"
     audio_files = list(target_dir.rglob("*.wav"))
     logger.info(f"Found {len(audio_files)} audio files in the dataset.")
     return audio_files
 
 
-def _import_audio_from_dataset():
-    """Import audio files from the GTZAN dataset."""
-    audio_files = _list_audio_files()
-    audio_data = []
-    # for file in audio_files:
-    # y, sr = librosa.load(file)
-    # y, _ = librosa.effects.trim(y)
-    # audio_data.append((file, y, sr))
-    # return audio_data
+def _import_audio_from_dataset() -> list[audio]:
+    """Import audio files from the GTZAN dataset.
+    
+    :return: List of audio dataclass instances
+    """
+    audio_paths = _list_audio_filepaths()
+    audio_files = []
+    id_counter = 0
+    for path in audio_paths:
+        audio_file = audio(
+            id=id_counter,
+            name=path.stem,
+            path=path,
+        )
+        audio_file.y, audio_file.sr = get_features(audio_file)
+        audio_files.append(audio_file)
+        id_counter += 1
+    return audio_files

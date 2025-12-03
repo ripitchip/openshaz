@@ -10,7 +10,9 @@ class audio:
     """
     This class contains methods to extract various audio features from a given audio signal.
     """
+    id: int = None
+    name: str = None
     path: Path = None
-    y: np.ndarray
-    sr: int
+    y: np.ndarray = None
+    sr: int = None
     features: np.ndarray = None
