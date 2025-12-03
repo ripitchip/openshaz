@@ -25,6 +25,25 @@ def parse_arguments():
         "--recreate", action="store_true", help="Force recreation of dataset cache"
     )
     parser.add_argument(
+        "--source",
+        type=str,
+        default="gtzan",
+        choices=["gtzan", "fma"],
+        help="Dataset source: 'gtzan' or 'fma' (default: gtzan)",
+    )
+    parser.add_argument(
+        "--fma-size",
+        type=str,
+        default="small",
+        choices=["small", "medium", "large", "full"],
+        help="FMA dataset size: 'small' (8GB), 'medium' (25GB), 'large' (93GB), or 'full' (879GB) (default: small)",
+    )
+    parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force download of large datasets like fma_full",
+    )
+    parser.add_argument(
         "--compare-metrics",
         action="store_true",
         help="Compare different similarity metrics",
@@ -61,7 +80,13 @@ def start_logging(is_debug: bool) -> None:
 
 
 def create_dataframe(
-    limit: int | None, log_level: str, multi: bool, recreate: bool
+    limit: int | None,
+    log_level: str,
+    multi: bool,
+    recreate: bool,
+    source: str = "gtzan",
+    fma_size: str = "small",
+    force: bool = False,
 ) -> None:
     """Create a DataFrame with audio features from the dataset.
 
@@ -69,6 +94,9 @@ def create_dataframe(
     :param log_level: Logging level
     :param multi: Use multiprocessing for feature extraction
     :param recreate: Force recreation of dataset cache
+    :param source: Dataset source ('gtzan' or 'fma')
+    :param fma_size: FMA dataset size (only used if source='fma')
+    :param force: Force download of large datasets
     :return: DataFrame with audio features
     """
     logger.debug("Importing audio dataset.")
@@ -77,6 +105,9 @@ def create_dataframe(
         log_level=log_level,
         use_multiprocessing=multi,
         recreate=recreate,
+        source=source,
+        fma_size=fma_size,
+        force=force,
     )
     logger.info(f"Imported {len(dataset)} audio files from dataset.")
 
@@ -143,6 +174,9 @@ def __main__():
         log_level="DEBUG" if args.debug else "INFO",
         multi=args.multi,
         recreate=args.recreate,
+        source=args.source,
+        fma_size=args.fma_size,
+        force=args.force,
     )
 
     if args.compare_metrics:

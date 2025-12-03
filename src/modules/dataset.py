@@ -1,6 +1,7 @@
 import json
 import shutil
 import sys
+import zipfile
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
 
@@ -77,19 +78,116 @@ DEFAULT_DATAFRAME_COLUMNS = [
 ]
 
 
-def _download_dataset() -> None:
-    """Download the GTZAN dataset from Kaggle and store it in the data/raw directory."""
-    target_dir = Path(__file__).parent.parent.parent / "data" / "raw"
-    logger.debug(f"Target directory for dataset: {target_dir.as_posix()}")
+def _download_gtzan() -> Path:
+    """Download the GTZAN dataset from Kaggle.
 
+    :return: Path to the dataset directory
+    """
+    target_dir = Path(__file__).parent.parent.parent / "data" / "raw" / "gtzan"
     target_dir.mkdir(parents=True, exist_ok=True)
+
+    logger.info("Downloading GTZAN dataset from Kaggle...")
     path = kagglehub.dataset_download(
         "andradaolteanu/gtzan-dataset-music-genre-classification"
     )
-    logger.debug("Path to dataset files:", path)
+    logger.debug(f"Downloaded to: {path}")
 
     shutil.copytree(path, target_dir, dirs_exist_ok=True)
-    logger.info(f"Dataset copied to: ${target_dir}")
+    logger.info(f"GTZAN dataset copied to: {target_dir}")
+    return target_dir
+
+
+def _download_fma(size: str = "small", force: bool = False) -> Path:
+    """Download the FMA (Free Music Archive) dataset.
+
+    :param size: Dataset size - 'small' (8GB), 'medium' (25GB), 'large' (93GB), or 'full' (879GB)
+    :param force: Force download of 'full' dataset (requires explicit confirmation)
+    :return: Path to the dataset directory
+    """
+    import requests
+
+    if size not in ["small", "medium", "large", "full"]:
+        raise ValueError(
+            f"Invalid size: {size}. Must be 'small', 'medium', 'large', or 'full'"
+        )
+
+    if size == "full" and not force:
+        raise ValueError(
+            "FMA 'full' dataset is 879GB! Use --force flag to confirm download. "
+            "Command: python src --source fma --fma-size full --force"
+        )
+
+    target_dir = Path(__file__).parent.parent.parent / "data" / "raw" / f"fma_{size}"
+    target_dir.mkdir(parents=True, exist_ok=True)
+
+    zip_file = target_dir.parent / f"fma_{size}.zip"
+
+    if not zip_file.exists():
+        url = f"https://os.unil.cloud.switch.ch/fma/fma_{size}.zip"
+        logger.info(f"Downloading FMA {size} dataset from {url}...")
+
+        try:
+            response = requests.get(url, stream=True, allow_redirects=True)
+            response.raise_for_status()
+
+            total_size = int(response.headers.get("content-length", 0))
+
+            with (
+                open(zip_file, "wb") as f,
+                tqdm(
+                    desc=f"Downloading fma_{size}.zip",
+                    total=total_size,
+                    unit="B",
+                    unit_scale=True,
+                    unit_divisor=1024,
+                ) as pbar,
+            ):
+                for chunk in response.iter_content(chunk_size=8192):
+                    if chunk:
+                        f.write(chunk)
+                        pbar.update(len(chunk))
+
+            logger.info(f"Downloaded to: {zip_file}")
+        except requests.exceptions.RequestException as e:
+            if zip_file.exists():
+                zip_file.unlink()  # Remove incomplete download
+            raise RuntimeError(f"Failed to download FMA dataset: {e}")
+    else:
+        logger.info(f"Using existing download: {zip_file}")
+
+    if not (target_dir / "fma_metadata").exists() and not list(target_dir.glob("*")):
+        logger.info(f"Extracting {zip_file}...")
+        with zipfile.ZipFile(zip_file, "r") as zip_ref:
+            members = zip_ref.namelist()
+            with tqdm(
+                desc=f"Extracting fma_{size}.zip", total=len(members), unit="file"
+            ) as pbar:
+                for member in members:
+                    zip_ref.extract(member, target_dir)
+                    pbar.update(1)
+        logger.info(f"FMA {size} dataset extracted to: {target_dir}")
+    else:
+        logger.info(f"Dataset already extracted at: {target_dir}")
+
+    return target_dir
+
+
+def _download_dataset(
+    source: str = "gtzan", fma_size: str = "small", force: bool = False
+) -> Path:
+    """Download a music dataset.
+
+    :param source: Dataset source - 'gtzan' or 'fma'
+    :param fma_size: FMA dataset size (only used if source='fma')
+    :param force: Force download of large datasets
+    :return: Path to the dataset directory
+    """
+    if source == "gtzan":
+        return _download_gtzan()
+    elif source == "fma":
+        return _download_fma(size=fma_size, force=force)
+    else:
+        raise ValueError(f"Unknown source: {source}. Must be 'gtzan' or 'fma'")
 
 
 def _list_audio_filepaths() -> list[Path]:
@@ -135,52 +233,84 @@ def _process_single_audio(args: tuple[int, Path]) -> audio | None:
         return None
 
 
-def _get_dataframe_cache_path(limit: int | None = None) -> Path:
+def _get_dataframe_cache_path(
+    source: str = "gtzan", fma_size: str | None = None, limit: int | None = None
+) -> Path:
     """Get the path to the cached dataframe CSV file.
 
+    :param source: Dataset source ('gtzan' or 'fma')
+    :param fma_size: FMA dataset size (only used if source='fma')
     :param limit: Optional limit used to differentiate cache files
     :return: Path to CSV cache file
     """
     cache_dir = Path(__file__).parent.parent.parent / "data" / "processed"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    if source == "fma":
+        source_suffix = f"{source}_{fma_size}"
+    else:
+        source_suffix = source
+
     if limit is not None:
-        return cache_dir / f"dataset_features_{limit}.csv"
-    return cache_dir / "dataset_features_full.csv"
+        return cache_dir / f"dataset_features_{source_suffix}_{limit}.csv"
+    return cache_dir / f"dataset_features_{source_suffix}_full.csv"
 
 
-def _save_dataframe(dataframe: pd.DataFrame, limit: int | None = None) -> None:
+def _save_dataframe(
+    dataframe: pd.DataFrame,
+    source: str = "gtzan",
+    fma_size: str | None = None,
+    limit: int | None = None,
+) -> None:
     """Save the dataframe to a CSV file.
 
     :param dataframe: Pandas DataFrame containing audio features
+    :param source: Dataset source ('gtzan' or 'fma')
+    :param fma_size: FMA dataset size (only used if source='fma')
     :param limit: Optional limit used to differentiate cache files
     """
-    csv_path = _get_dataframe_cache_path(limit)
+    csv_path = _get_dataframe_cache_path(source, fma_size, limit)
     dataframe.to_csv(csv_path, index=False)
     logger.info(f"Dataframe cached to: {csv_path}")
 
 
-def _get_dataset_cache_path(limit: int | None = None) -> Path:
+def _get_dataset_cache_path(
+    source: str = "gtzan", fma_size: str | None = None, limit: int | None = None
+) -> Path:
     """Get the path to the cached dataset file.
 
+    :param source: Dataset source ('gtzan' or 'fma')
+    :param fma_size: FMA dataset size (only used if source='fma')
     :param limit: Optional limit used to differentiate cache files
     :return: Path to cache file
     """
     cache_dir = Path(__file__).parent.parent.parent / "data" / "processed"
     cache_dir.mkdir(parents=True, exist_ok=True)
 
+    if source == "fma":
+        source_suffix = f"{source}_{fma_size}"
+    else:
+        source_suffix = source
+
     if limit is not None:
-        return cache_dir / f"dataset_cache_{limit}.json"
-    return cache_dir / "dataset_cache_full.json"
+        return cache_dir / f"dataset_cache_{source_suffix}_{limit}.json"
+    return cache_dir / f"dataset_cache_{source_suffix}_full.json"
 
 
-def _save_dataset(dataset: list[audio], limit: int | None = None) -> None:
+def _save_dataset(
+    dataset: list[audio],
+    source: str = "gtzan",
+    fma_size: str | None = None,
+    limit: int | None = None,
+) -> None:
     """Save the dataset to a JSON file and dataframe to CSV.
 
     :param dataset: List of audio dataclass instances
+    :param source: Dataset source ('gtzan' or 'fma')
+    :param fma_size: FMA dataset size (only used if source='fma')
     :param limit: Optional limit used to differentiate cache files
     """
-    cache_path = _get_dataset_cache_path(limit)
+    cache_path = _get_dataset_cache_path(source, fma_size, limit)
 
     json_data = []
     for audio_file in dataset:
@@ -200,13 +330,17 @@ def _save_dataset(dataset: list[audio], limit: int | None = None) -> None:
     logger.info(f"Dataset cached to: {cache_path}")
 
 
-def _load_dataset(limit: int | None = None) -> list[audio] | None:
+def _load_dataset(
+    source: str = "gtzan", fma_size: str | None = None, limit: int | None = None
+) -> list[audio] | None:
     """Load the dataset from a JSON file if it exists.
 
+    :param source: Dataset source ('gtzan' or 'fma')
+    :param fma_size: FMA dataset size (only used if source='fma')
     :param limit: Optional limit used to differentiate cache files
     :return: List of audio dataclass instances or None if cache doesn't exist
     """
-    cache_path = _get_dataset_cache_path(limit)
+    cache_path = _get_dataset_cache_path(source, fma_size, limit)
     if cache_path.exists():
         with open(cache_path, "r") as f:
             json_data = json.load(f)
@@ -259,7 +393,6 @@ def _import_audio_from_dataset(
                     desc="Processing audio files",
                 )
             )
-            # Filter out None values (failed processing)
             audio_files = [af for af in results if af is not None]
             failed_count = len(results) - len(audio_files)
             if failed_count > 0:
@@ -298,13 +431,19 @@ def get_audio_dataset(
     log_level: str = "INFO",
     use_multiprocessing: bool = True,
     recreate: bool = False,
+    source: str = "gtzan",
+    fma_size: str = "small",
+    force: bool = False,
 ) -> list[audio]:
-    """Create the GTZAN dataset from Kaggle if not already present.
+    """Create a music dataset from the specified source.
 
     :param limit: Optional limit on the number of audio files to import
     :param log_level: Log level for worker processes (default: INFO)
     :param use_multiprocessing: Whether to use parallel processing (default: True)
     :param recreate: Force recreation of dataset even if cache exists (default: False)
+    :param source: Dataset source - 'gtzan' or 'fma' (default: 'gtzan')
+    :param fma_size: FMA dataset size - 'small', 'medium', 'large', or 'full' (default: 'small')
+    :param force: Force download of large datasets like fma_full (default: False)
     :return: List of audio dataclass instances
     """
     if not recreate:
@@ -313,19 +452,26 @@ def get_audio_dataset(
             return cached_dataset
 
     target_dir = Path(__file__).parent.parent.parent / "data" / "raw"
+    if source == "gtzan":
+        target_dir = target_dir / "gtzan"
+    elif source == "fma":
+        target_dir = target_dir / f"fma_{fma_size}"
+
     logger.debug(f"Checking for dataset in directory: {target_dir.as_posix()}")
 
     if not target_dir.exists() or not any(target_dir.iterdir()):
-        logger.info("GTZAN dataset not found locally. Downloading from Kaggle...")
-        _download_dataset()
+        logger.info(f"{source.upper()} dataset not found locally. Downloading...")
+        _download_dataset(source, fma_size, force)
     else:
-        logger.info("GTZAN dataset already exists locally. Skipping download.")
+        logger.info(
+            f"{source.upper()} dataset already exists locally. Skipping download."
+        )
 
     dataset = _import_audio_from_dataset(
         limit, log_level=log_level, use_multiprocessing=use_multiprocessing
     )
 
-    _save_dataset(dataset, limit)
+    _save_dataset(dataset, source, fma_size, limit)
     return dataset
 
 

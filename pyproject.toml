@@ -16,6 +16,7 @@ dependencies = [
     "loguru>=0.7.0",
     "kagglehub>=0.3.13",
     "pandas>=2.3.3",
+    "requests>=2.32.0",
 ]
 
 [project.urls]
