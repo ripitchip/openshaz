@@ -1,7 +1,7 @@
 import sys
 from loguru import logger
 
-from modules.utils import create_dataset
+from modules.dataset import create_dataset
 
 
 @logger.catch
