@@ -8,8 +8,7 @@ from models.audio import audio
 
 
 def _import_audio_from_path(path: Path) -> tuple[np.ndarray, int]:
-    """
-    Import an audio file and return the audio time series and sampling rate.
+    """Import an audio file and return the audio time series and sampling rate.
     :param path: Path to the audio file
     :return: Tuple of audio time series and sampling rate
     """
@@ -23,8 +22,7 @@ def _import_audio_from_path(path: Path) -> tuple[np.ndarray, int]:
 
 
 def _get_length(y: np.ndarray) -> int:
-    """
-    Get the length of the audio signal in samples.
+    """Get the length of the audio signal in samples.
     :param y: Audio time series
     :return: Length of the audio signal
     """
@@ -34,8 +32,7 @@ def _get_length(y: np.ndarray) -> int:
 def _get_chroma_stft_mean_var(
     y: np.ndarray, sr: int, hop_length: int = 5000
 ) -> tuple[float, float]:
-    """
-    Get the mean and variance of the chroma STFT feature.
+    """Get the mean and variance of the chroma STFT feature.
     :param y: Audio time series
     :param sr: Sampling rate of the audio signal
     :param hop_length: Hop length for STFT
@@ -46,8 +43,7 @@ def _get_chroma_stft_mean_var(
 
 
 def _get_rms_mean_var(y: np.ndarray) -> tuple[float, float]:
-    """
-    Get the mean and variance of the RMS energy feature.
+    """Get the mean and variance of the RMS energy feature.
     :param y: Audio time series
     :return: Mean and variance of RMS energy
     """
@@ -56,8 +52,7 @@ def _get_rms_mean_var(y: np.ndarray) -> tuple[float, float]:
 
 
 def _get_spectral_centroid_mean_var(y: np.ndarray, sr: int) -> tuple:
-    """
-    Get the mean and variance of the spectral centroid feature.
+    """Get the mean and variance of the spectral centroid feature.
     :param y: Audio time series
     :param sr: Sampling rate of the audio signal
     :return: Mean and variance of spectral centroid
@@ -67,8 +62,7 @@ def _get_spectral_centroid_mean_var(y: np.ndarray, sr: int) -> tuple:
 
 
 def _get_spectral_bandwidth_mean_var(y: np.ndarray, sr: int) -> tuple:
-    """
-    Get the mean and variance of the spectral bandwidth feature.
+    """Get the mean and variance of the spectral bandwidth feature.
     :param y: Audio time series
     :param sr: Sampling rate of the audio signal
     :return: Mean and variance of spectral bandwidth
@@ -78,8 +72,7 @@ def _get_spectral_bandwidth_mean_var(y: np.ndarray, sr: int) -> tuple:
 
 
 def _get_spectral_rolloff_mean_var(y: np.ndarray, sr: int) -> tuple:
-    """
-    Get the mean and variance of the spectral rolloff feature.
+    """Get the mean and variance of the spectral rolloff feature.
     :param y: Audio time series
     :param sr: Sampling rate of the audio signal
     :return: Mean and variance of spectral rolloff
@@ -89,8 +82,7 @@ def _get_spectral_rolloff_mean_var(y: np.ndarray, sr: int) -> tuple:
 
 
 def _get_zero_crossing_rate_mean_var(y: np.ndarray) -> tuple:
-    """
-    Get the mean and variance of the zero crossing rate feature.
+    """Get the mean and variance of the zero crossing rate feature.
     :param y: Audio time series
     :return: Mean and variance of zero crossing rate
     """
@@ -99,8 +91,7 @@ def _get_zero_crossing_rate_mean_var(y: np.ndarray) -> tuple:
 
 
 def _get_harmonics_perceptrual_mean_var(y: np.ndarray) -> tuple:
-    """
-    Get the mean and variance of the harmonic and percussive components.
+    """Get the mean and variance of the harmonic and percussive components.
     :param y: Audio time series
     :return: Mean and variance of harmonic and percussive components
     """
@@ -109,8 +100,7 @@ def _get_harmonics_perceptrual_mean_var(y: np.ndarray) -> tuple:
 
 
 def _get_tempo(y: np.ndarray, sr: int) -> float:
-    """
-    Get the tempo of the audio signal.
+    """Get the tempo of the audio signal.
     :param y: Audio time series
     :param sr: Sampling rate of the audio signal
     :return: Tempo of the audio signal
@@ -120,8 +110,7 @@ def _get_tempo(y: np.ndarray, sr: int) -> float:
 
 
 def _get_mfcc_mean_var(y: np.ndarray, sr: int) -> np.ndarray:
-    """
-    Get the mean and variance of the MFCC features.
+    """Get the mean and variance of the MFCC features.
     :param y: Audio time series
     :param sr: Sampling rate of the audio signal
     :return: Array of mean and variance of MFCC features
@@ -135,8 +124,7 @@ def _get_mfcc_mean_var(y: np.ndarray, sr: int) -> np.ndarray:
 
 
 def _extract_features(audio: audio) -> np.ndarray:
-    """
-    Extract all audio features and return them as a single array.
+    """Extract all audio features and return them as a single array.
     :param path: Path to the audio file
     :return: Array of extracted audio features
     """
@@ -157,9 +145,7 @@ def _extract_features(audio: audio) -> np.ndarray:
 
 
 def get_features(audio: audio) -> np.ndarray:
-    """
-    Extract all audio features and return them as a single array.
-
+    """Extract all audio features and return them as a single array.
     :param audio: Audio dataclass instance containing audio data
     :return: Array of extracted audio features
     """
