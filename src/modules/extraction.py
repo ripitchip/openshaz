@@ -2,8 +2,8 @@
 
 import librosa
 import numpy as np
-from pathlib import Path
 from loguru import logger
+from pathlib import Path
 
 from models.audio import audio
 
@@ -105,7 +105,8 @@ def _get_harmonics_perceptrual_mean_var(y: np.ndarray) -> tuple:
     :param y: Audio time series
     :return: Mean and variance of harmonic and percussive components
     """
-    y_harm, y_perc = librosa.effects.hpss(y)
+    # Use margin=2 for faster processing (lower quality but much faster)
+    y_harm, y_perc = librosa.effects.hpss(y, margin=2)
     return np.mean(y_harm), np.mean(y_perc), np.var(y_harm), np.var(y_perc)
 
 
@@ -117,7 +118,7 @@ def _get_tempo(y: np.ndarray, sr: int) -> float:
     :return: Tempo of the audio signal
     """
     tempo, _ = librosa.beat.beat_track(y=y, sr=sr)
-    return tempo[0]
+    return float(tempo) if np.isscalar(tempo) else float(tempo[0])
 
 
 def _get_mfcc_mean_var(y: np.ndarray, sr: int) -> np.ndarray:
@@ -128,11 +129,9 @@ def _get_mfcc_mean_var(y: np.ndarray, sr: int) -> np.ndarray:
     :return: Array of mean and variance of MFCC features
     """
     mfcc = librosa.feature.mfcc(y=y, sr=sr)
-    mfcc_features = []
-    for i in range(mfcc.shape[0]):
-        mfcc_features.append(np.mean(mfcc[i]))
-        mfcc_features.append(np.var(mfcc[i]))
-    return np.array(mfcc_features)
+    means = np.mean(mfcc, axis=1)
+    variances = np.var(mfcc, axis=1)
+    return np.column_stack((means, variances)).ravel()
 
 
 def _extract_features(audio: audio) -> np.ndarray:
@@ -143,22 +142,25 @@ def _extract_features(audio: audio) -> np.ndarray:
     """
     y = audio.y
     sr = audio.sr
-    features = np.array([])
-    features = np.hstack((features, _get_length(y)))
-    features = np.hstack((features, _get_chroma_stft_mean_var(y, sr)))
-    features = np.hstack((features, _get_rms_mean_var(y)))
-    features = np.hstack((features, _get_spectral_centroid_mean_var(y, sr)))
-    features = np.hstack((features, _get_spectral_bandwidth_mean_var(y, sr)))
-    features = np.hstack((features, _get_spectral_rolloff_mean_var(y, sr)))
-    features = np.hstack((features, _get_zero_crossing_rate_mean_var(y)))
-    features = np.hstack((features, _get_harmonics_perceptrual_mean_var(y)))
-    features = np.hstack((features, _get_tempo(y, sr)))
-    features = np.hstack((features, _get_mfcc_mean_var(y, sr)))
-    return features
+
+    features = [
+        _get_length(y),
+        *_get_chroma_stft_mean_var(y, sr),
+        *_get_rms_mean_var(y),
+        *_get_spectral_centroid_mean_var(y, sr),
+        *_get_spectral_bandwidth_mean_var(y, sr),
+        *_get_spectral_rolloff_mean_var(y, sr),
+        *_get_zero_crossing_rate_mean_var(y),
+        *_get_harmonics_perceptrual_mean_var(y),
+        _get_tempo(y, sr),
+    ]
+
+    return np.concatenate([features, _get_mfcc_mean_var(y, sr)])
 
 
 def get_features(audio: audio) -> np.ndarray:
     """Extract all audio features and return them as a single array.
+
     :param audio: Audio dataclass instance containing audio data
     :return: Array of extracted audio features
     """
