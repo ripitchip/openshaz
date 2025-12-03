@@ -7,7 +7,7 @@ from modules.utils import create_dataset
 def __main__():
     logger.info("Starting audio feature extraction module.")
 
-    dataset = create_dataset()
+    dataset = create_dataset(limit=15)
     logger.info(f"Imported {len(dataset)} audio files from dataset.")
 
 
