@@ -96,7 +96,6 @@ class SimilarityEngine:
             result = {
                 "index": int(idx),
                 "similarity": float(similarities[idx]),
-                "confidence": float(similarities[idx] * 100),
             }
 
             if self.df is not None:

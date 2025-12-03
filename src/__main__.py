@@ -1,11 +1,13 @@
+import argparse
 import sys
 import time
-import argparse
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
 from loguru import logger
 
-from models import audio
+from models.audio import audio
 from modules.dataset import get_audio_dataset, get_features_dataframe
 from modules.extraction import get_features
 from modules.similarity import SimilarityEngine, compare_metrics
@@ -122,8 +124,10 @@ def measure_similarity(
 
     results = engine.find_similar(audio, top_k=top_k)
     logger.info(f"Top {top_k} similar results using {metric} metric:")
-    for rank, (idx, score) in enumerate(results, start=1):
-        logger.info(f"{rank}. Index: {idx}, Similarity Score: {score:.4f}")
+    for rank, result in enumerate(results, start=1):
+        name = result.get("name", "unknown")
+        similarity = result["similarity"]
+        logger.info(f"{rank}. {name} - Similarity: {similarity:.4f}")
 
 
 @logger.catch
@@ -149,14 +153,16 @@ def __main__():
             random_state=42,
         )
 
-    test_audio = audio(path=args.test_audio_path)
-    test_audio.features = get_features(test_audio)
-    measure_similarity(
-        df=df,
-        audio=test_audio.features,
-        metric=args.metric,
-        top_k=args.top_k,
-    )
+    if args.test_audio_path is not None:
+        test_audio_path = Path(args.test_audio_path)
+        test_audio = audio(name=test_audio_path.stem, path=test_audio_path)
+        test_audio.features = get_features(test_audio)
+        measure_similarity(
+            df=df,
+            audio=test_audio.features,
+            metric=args.metric,
+            top_k=args.top_k,
+        )
 
     elapsed_time = time.time() - start_time
     logger.info(f"Execution completed in {elapsed_time:.2f} seconds.")
