@@ -3,6 +3,7 @@
 import librosa
 import numpy as np
 from pathlib import Path
+from loguru import logger
 
 from models.audio import audio
 
@@ -162,5 +163,6 @@ def get_features(audio: audio) -> np.ndarray:
     :return: Array of extracted audio features
     """
     if audio.y is None or audio.sr is None:
+        logger.debug(f"Loading audio from path: {audio.path}")
         audio.y, audio.sr = _import_audio_from_path(audio.path)
     return _extract_features(audio)

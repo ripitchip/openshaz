@@ -1,5 +1,4 @@
 import shutil
-from time import sleep
 import kagglehub
 from pathlib import Path
 from loguru import logger
@@ -12,10 +11,7 @@ from tqdm import tqdm
 def _download_dataset():
     """Download the GTZAN dataset from Kaggle and store it in the data/raw directory."""
     target_dir = Path(__file__).parent.parent.parent / "data" / "raw"
-
-    if target_dir.exists() and any(target_dir.iterdir()):
-        logger.warning("Dataset already exists. Skipping download.")
-        return
+    logger.debug(f"Target directory for dataset: {target_dir.as_posix()}")
 
     target_dir.mkdir(parents=True, exist_ok=True)
     path = kagglehub.dataset_download(
@@ -33,6 +29,8 @@ def _list_audio_filepaths() -> list[Path]:
     :return: List of Paths to audio files
     """
     target_dir = Path(__file__).parent.parent.parent / "data" / "raw"
+    logger.debug(f"Listing audio files in directory: {target_dir.as_posix()}")
+
     audio_files = list(target_dir.rglob("*.wav"))
     logger.info(f"Found {len(audio_files)} audio files in the dataset.")
     return audio_files
@@ -44,10 +42,11 @@ def _import_audio_from_dataset(limit: int) -> list[audio]:
     :param limit: Optional limit on the number of audio files to import
     :return: List of audio dataclass instances
     """
-    
+
     audio_paths = _list_audio_filepaths()
     if limit is not None:
         audio_paths = audio_paths[:limit]
+        logger.info(f"Limiting import to first {limit} audio files.")
     audio_files = []
     id_counter = 0
     for path in tqdm(audio_paths, desc="Processing audio files"):
@@ -58,17 +57,22 @@ def _import_audio_from_dataset(limit: int) -> list[audio]:
         )
         audio_file.features = get_features(audio_file)
         audio_files.append(audio_file)
+        logger.debug(
+            f"Imported audio file: {audio_file.name}, assigned ID: {audio_file.id}"
+        )
         id_counter += 1
     return audio_files
 
 
 def create_dataset(limit: int | None = None) -> list[audio]:
     """Create the GTZAN dataset from Kaggle if not already present.
-    
+
     :param limit: Optional limit on the number of audio files to import
     :return: List of audio dataclass instances
     """
-    target_dir = Path(__file__).parent.parent / "data" / "raw"
+    target_dir = Path(__file__).parent.parent.parent / "data" / "raw"
+    logger.debug(f"Checking for dataset in directory: {target_dir.as_posix()}")
+
     if not target_dir.exists() or not any(target_dir.iterdir()):
         logger.info("GTZAN dataset not found locally. Downloading from Kaggle...")
         _download_dataset()
