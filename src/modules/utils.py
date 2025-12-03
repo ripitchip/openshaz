@@ -31,7 +31,7 @@ def _list_audio_filepaths() -> list[Path]:
     target_dir = Path(__file__).parent.parent.parent / "data" / "raw"
     logger.debug(f"Listing audio files in directory: {target_dir.as_posix()}")
 
-    audio_files = list(target_dir.rglob("*.wav"))
+    audio_files = sorted(target_dir.rglob("*.wav"))
     logger.info(f"Found {len(audio_files)} audio files in the dataset.")
     return audio_files
 
