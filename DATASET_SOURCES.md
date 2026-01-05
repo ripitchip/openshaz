@@ -19,7 +19,7 @@ OpenShaz now supports multiple dataset sources for audio similarity analysis:
 
 ### FMA (Free Music Archive)
 
-- **Source**: https://os.unil.cloud.switch.ch/fma/
+- **Source**: <https://os.unil.cloud.switch.ch/fma/>
 - **Storage**: `data/raw/fma_{size}/`
 - **Cache**: `data/processed/dataset_cache_fma_{size}_full.json`
 
