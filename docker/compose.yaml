@@ -7,7 +7,7 @@ services:
     ports:
       - "8000:8000"
     environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672//
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       MINIO_ENDPOINT: minio:9000
       MINIO_ROOT_USER: minioadmin
       MINIO_ROOT_PASSWORD: minioadmin
@@ -24,7 +24,7 @@ services:
     deploy:
       replicas: 3
     environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672//
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
       POSTGRES_URL: postgres://music:musicpass@postgres:5432/musicdb
       MINIO_ENDPOINT: http://minio:9000
       MINIO_ROOT_USER: minioadmin
@@ -52,11 +52,16 @@ services:
       - internal
 
   promtail:
-    image: grafana/promtail
+    image: grafana/promtail:latest
     command: -config.file=/etc/promtail/promtail.yml
     volumes:
+      # Your existing volume
       - worker_logs:/worker_logs:ro
+      # Your preferred config path
       - ./promtail/promtail.yml:/etc/promtail/promtail.yml
+      # NEW: Required for "read everything" mode
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - /var/lib/docker/containers:/var/lib/docker/containers:ro
     networks:
       - internal
     depends_on:
@@ -95,13 +100,17 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     environment:
-      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbitmq_prometheus true"
+      RABBITMQ_DEFAULT_USER: guest               # Default user
+      RABBITMQ_DEFAULT_PASS: guest               # Default password
+      RABBITMQ_DEFAULT_VHOST: /                  # Default virtual host
+      RABBITMQ_ERLANG_COOKIE: secretcookie123    # Explicit Erlang cookie
     ports:
-      - "5672:5672"
-      - "15672:15672"
-      - "15692:15692"
+      - "5672:5672"                              # AMQP protocol port
+      - "15672:15672"                            # RabbitMQ Management UI
+      - "15692:15692"                            # Prometheus exporter
     networks:
       - internal
+
 
   postgres_exporter:
     image: prometheuscommunity/postgres-exporter

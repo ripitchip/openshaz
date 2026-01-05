@@ -6,13 +6,26 @@ positions:
   filename: /tmp/positions.yaml
 
 clients:
-  - url: http://loki:3100/loki/api/v1/push
+  # Using 'lgtm' because that is the service name in your compose
+  - url: http://lgtm:3100/loki/api/v1/push
 
 scrape_configs:
-  - job_name: worker
+  # JOB 1: Your specific worker log files
+  - job_name: worker_file_logs
     static_configs:
       - targets:
           - localhost
         labels:
           service: worker
+          log_type: filesystem
           __path__: /worker_logs/*.log
+
+  # JOB 2: Everything else via Docker Socket
+  - job_name: docker_container_logs
+    docker_sd_configs:
+      - host: unix:///var/run/docker.sock
+        refresh_interval: 5s
+    relabel_configs:
+      - source_labels: ['__meta_docker_container_name']
+        regex: '/(.*)'
+        target_label: 'container'
