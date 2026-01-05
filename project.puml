@@ -1,0 +1,58 @@
+@startuml Distributed_Music_Pipeline
+Title Scaling Speed: Pipelined Music Comparison
+
+' Use "polyline" or default for better label placement than "ortho"
+skinparam shadowing false
+skinparam nodesep 60
+skinparam ranksep 50
+
+node "Ingestion" {
+    [Music API] as API #LightGreen
+}
+
+' Positioning queues more clearly
+queue "Queue: Extraction" as Q1 #Orange
+queue "Queue: Comparison" as Q2 #Orange
+
+package "Extraction Cluster (CPU Heavy)" {
+    node "Machine_Ext_1" {
+        [Worker_Ext_A] as EX1
+    }
+    node "Machine_Ext_N" {
+        [Worker_Ext_B] as EXn
+    }
+}
+
+package "Comparison Cluster (Memory/DB Heavy)" {
+    node "Machine_Comp_1" {
+        [Worker_Comp_A] as CP1
+    }
+    node "Machine_Comp_N" {
+        [Worker_Comp_B] as CPn
+    }
+}
+
+database "Data Store" {
+    [PostgreSQL] as DB
+    [MinIO] as S3
+}
+
+' --- Refined Work Flow ---
+API --> S3 : "1. Upload Raw"
+API -> Q1 : "2. Task: Extract"
+
+' Using -->> or -> for better vertical flow
+Q1 --> EX1 : "3a. Process file"
+Q1 --> EXn : "3b. Process file"
+
+' Forcing horizontal/downward separation to avoid overlap
+EX1 --> Q2 : "4. Task: Compare(Vector)"
+EXn --> Q2 : "4. Task: Compare(Vector)"
+
+Q2 --> CP1 : "5a. Search DB"
+Q2 --> CPn : "5b. Search DB"
+
+CP1 --> DB : "6. Find Nearest"
+CPn --> DB : "6. Find Nearest"
+
+@enduml
