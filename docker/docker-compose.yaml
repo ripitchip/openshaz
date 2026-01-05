@@ -1,0 +1,121 @@
+services:
+  # ------------------------------------------------------
+  # API & WORKERS (Custom Logic)
+  # ------------------------------------------------------
+  api:
+    build: ./app/api
+    ports:
+      - "8000:8000"
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672//
+      MINIO_ENDPOINT: minio:9000
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      POSTGRES_URL: postgres://music:musicpass@postgres:5432/musicdb
+    depends_on:
+      - rabbitmq
+      - minio
+      - postgres
+    networks:
+      - internal
+
+  worker:
+    build: ./app/worker
+    deploy:
+      replicas: 3
+    environment:
+      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672//
+      POSTGRES_URL: postgres://music:musicpass@postgres:5432/musicdb
+      MINIO_ENDPOINT: http://minio:9000
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+      WORKER_LOG_PATH: /worker_logs/worker.log
+    depends_on:
+      - rabbitmq
+      - postgres
+      - minio
+    networks:
+      - internal
+    volumes:
+      - worker_logs:/worker_logs
+
+  # ------------------------------------------------------
+  # OBSERVABILITY (All-in-One)
+  # ------------------------------------------------------
+  lgtm:
+    image: grafana/otel-lgtm:latest
+    ports:
+      - "3000:3000" # Grafana Web UI
+      - "9090:9090" # Prometheus API
+      - "3100:3100" # Loki API
+    networks:
+      - internal
+
+  promtail:
+    image: grafana/promtail
+    command: -config.file=/etc/promtail/promtail.yml
+    volumes:
+      - worker_logs:/worker_logs:ro
+      - ./promtail/promtail.yml:/etc/promtail/promtail.yml
+    networks:
+      - internal
+    depends_on:
+      - lgtm
+
+  # ------------------------------------------------------
+  # INFRASTRUCTURE (Storage & Messaging)
+  # ------------------------------------------------------
+  minio:
+    image: minio/minio:latest
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minioadmin
+      MINIO_ROOT_PASSWORD: minioadmin
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000"
+      - "9001:9001"
+    networks:
+      - internal
+
+  postgres:
+    build: ./postgres 
+    environment:
+      POSTGRES_USER: music
+      POSTGRES_PASSWORD: musicpass
+      POSTGRES_DB: musicdb
+    volumes:
+      - pgdata:/var/lib/postgresql
+    ports:
+      - "5432:5432"
+    networks:
+      - internal
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    environment:
+      RABBITMQ_SERVER_ADDITIONAL_ERL_ARGS: "-rabbitmq_prometheus true"
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+      - "15692:15692"
+    networks:
+      - internal
+
+  postgres_exporter:
+    image: prometheuscommunity/postgres-exporter
+    environment:
+      DATA_SOURCE_NAME: postgres://music:musicpass@postgres:5432/musicdb?sslmode=disable
+    networks:
+      - internal
+    depends_on:
+      - postgres
+
+networks:
+  internal:
+
+volumes:
+  minio_data:
+  pgdata:
+  worker_logs:

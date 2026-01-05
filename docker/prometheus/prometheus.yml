@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 5s
+
+scrape_configs:
+  - job_name: "workers"
+    dns_sd_configs:
+      - names: ["worker"]
+        type: A
+        port: 8000
+
+  - job_name: "postgres"
+    static_configs:
+      - targets: ["postgres_exporter:9187"]
+
+  - job_name: "rabbitmq"
+    static_configs:
+      - targets: ["rabbitmq:15692"]
+
+  - job_name: "minio"
+    static_configs:
+      - targets: ["minio:9000"]
+
+  - job_name: "node"
+    static_configs:
+      - targets: ["node_exporter:9100"]
