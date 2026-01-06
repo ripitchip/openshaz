@@ -1,4 +1,3 @@
-import argparse
 import sys
 import time
 from pathlib import Path
@@ -6,68 +5,11 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from loguru import logger
-
 from models.audio import audio
+from modules.parser import parse_arguments
 from modules.dataset import get_audio_dataset, get_features_dataframe
 from modules.extraction import get_features
 from modules.similarity import SimilarityEngine, compare_metrics
-
-
-def parse_arguments():
-    """Parse command-line arguments."""
-    parser = argparse.ArgumentParser(description="Audio Feature Extraction Module")
-    parser.add_argument("--debug", action="store_true", help="Run with debug console")
-    parser.add_argument("--multi", action="store_true", help="Enable multiprocessing")
-    parser.add_argument(
-        "--limit", action="store_true", help="Limit number of audio files imported"
-    )
-    parser.add_argument(
-        "--recreate", action="store_true", help="Force recreation of dataset cache"
-    )
-    parser.add_argument(
-        "--source",
-        type=str,
-        default="gtzan",
-        choices=["gtzan", "fma"],
-        help="Dataset source: 'gtzan' or 'fma' (default: gtzan)",
-    )
-    parser.add_argument(
-        "--fma-size",
-        type=str,
-        default="small",
-        choices=["small", "medium", "large", "full"],
-        help="FMA dataset size: 'small' (8GB), 'medium' (25GB), 'large' (93GB), or 'full' (879GB) (default: small)",
-    )
-    parser.add_argument(
-        "--force",
-        action="store_true",
-        help="Force download of large datasets like fma_full",
-    )
-    parser.add_argument(
-        "--compare-metrics",
-        action="store_true",
-        help="Compare different similarity metrics",
-    )
-    parser.add_argument(
-        "--metric",
-        type=str,
-        default="cosine",
-        choices=["cosine", "euclidean", "manhattan"],
-        help="Similarity metric to use (default: cosine)",
-    )
-    parser.add_argument(
-        "--top-k",
-        type=int,
-        default=5,
-        help="Number of top similar results (default: 5)",
-    )
-    parser.add_argument(
-        "--test-audio-path",
-        type=str,
-        default=None,
-        help="Path to the test audio file",
-    )
-    return parser.parse_args()
 
 
 def start_logging(is_debug: bool) -> None:
@@ -163,43 +105,51 @@ def measure_similarity(
 
 @logger.catch
 def __main__():
-    start_time = time.time()
-
     args = parse_arguments()
 
     start_logging(is_debug=args.debug)
 
-    df = create_dataframe(
-        limit=args.limit,
-        log_level="DEBUG" if args.debug else "INFO",
-        multi=args.multi,
-        recreate=args.recreate,
-        source=args.source,
-        fma_size=args.fma_size,
-        force=args.force,
-    )
-
-    if args.compare_metrics:
-        compare_different_metrics(
-            df=df,
-            test_size=0.2,
-            top_k=args.top_k,
-            random_state=42,
+    if args.command == "manual":
+        start_time = time.time()
+        df = create_dataframe(
+            limit=args.limit,
+            log_level="DEBUG" if args.debug else "INFO",
+            multi=args.multi,
+            recreate=args.recreate,
+            source=args.source,
+            fma_size=args.fma_size,
+            force=args.force,
         )
 
-    if args.test_audio_path is not None:
-        test_audio_path = Path(args.test_audio_path)
-        test_audio = audio(name=test_audio_path.stem, path=test_audio_path)
-        test_audio.features = get_features(test_audio)
-        measure_similarity(
-            df=df,
-            audio=test_audio.features,
-            metric=args.metric,
-            top_k=args.top_k,
-        )
+        if args.compare_metrics:
+            compare_different_metrics(
+                df=df,
+                test_size=0.2,
+                top_k=args.top_k,
+                random_state=42,
+            )
 
-    elapsed_time = time.time() - start_time
-    logger.info(f"Execution completed in {elapsed_time:.2f} seconds.")
+        if args.test_audio_path is not None:
+            test_audio_path = Path(args.test_audio_path)
+            test_audio = audio(name=test_audio_path.stem, path=test_audio_path)
+            test_audio.features = get_features(test_audio)
+            measure_similarity(
+                df=df,
+                audio=test_audio.features,
+                metric=args.metric,
+                top_k=args.top_k,
+            )
+        elapsed_time = time.time() - start_time
+        logger.info(f"Execution completed in {elapsed_time:.2f} seconds.")
+
+    elif args.command == "worker":
+        logger.info("Starting worker mode...")
+        logger.info(f"Worker ID: {args.worker_id or 'auto-generated'}")
+        logger.info(f"Queue URL: {args.queue_url or 'default'}")
+        logger.info(f"Batch size: {args.batch_size}")
+
+        # TODO: Implement worker logic here
+        logger.warning("Worker mode not yet implemented")
 
 
 if __name__ == "__main__":

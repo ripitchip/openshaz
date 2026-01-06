@@ -7,4 +7,4 @@ RUN pip install --no-cache-dir -e .
 
 COPY src/ ./src/
 
-CMD ["python", "src"]
+CMD ["python", "src", "worker", "--debug"]
