@@ -1,6 +1,6 @@
 # Project
 data/
-
+worker_logs/
 # Vagrant
 .vagrant
 *.log

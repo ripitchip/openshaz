@@ -12,12 +12,18 @@ from modules.extraction import get_features
 from modules.similarity import SimilarityEngine, compare_metrics
 
 
-def start_logging(is_debug: bool) -> None:
+def start_logging(is_debug: bool, is_worker: bool) -> None:
     """Initialize logging configuration."""
     logger.remove()
     log_level = "DEBUG" if is_debug else "INFO"
     logger.add(sys.stderr, level=log_level)
-
+    if is_worker:
+        logger.add(
+            "./worker_logs/worker.log",
+            rotation="500 MB",
+            compression="zip",
+            level="DEBUG",
+        )
     logger.info("Starting OpenShaz, Open-source audio similarity tool.")
 
 
@@ -107,9 +113,8 @@ def measure_similarity(
 def __main__():
     args = parse_arguments()
 
-    start_logging(is_debug=args.debug)
-
     if args.command == "manual":
+        start_logging(is_debug=args.debug, is_worker=False)
         start_time = time.time()
         df = create_dataframe(
             limit=args.limit,
@@ -143,6 +148,7 @@ def __main__():
         logger.info(f"Execution completed in {elapsed_time:.2f} seconds.")
 
     elif args.command == "worker":
+        start_logging(is_debug=args.debug, is_worker=True)
         logger.info("Starting worker mode...")
         logger.info(f"Worker ID: {args.worker_id or 'auto-generated'}")
         logger.info(f"Queue URL: {args.queue_url or 'default'}")
