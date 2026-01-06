@@ -240,3 +240,43 @@ def compare_metrics(
     logger.info(f"\nMetric comparison:\n{comparison_df.to_string()}")
 
     return comparison_df
+
+
+def compare_different_metrics(
+    df, test_size: float = 0.2, top_k: int = 5, random_state: int = 42
+):
+    """Compare different similarity metrics on the same dataset.
+
+    :param df: DataFrame with audio features
+    :param test_size: Proportion of dataset to use for testing
+    :param top_k: Number of top matches to consider
+    :param random_state: Random seed for reproducibility
+    :return: DataFrame comparing metrics
+    """
+    logger.info("Comparing similarity metrics...")
+    comparison_df = compare_metrics(
+        df=df, test_size=test_size, top_k=top_k, random_state=random_state
+    )
+    logger.info(f"\nComparison results:\n{comparison_df}")
+
+
+def measure_similarity(
+    df: pd.DataFrame, audio: np.ndarray, metric: str = "cosine", top_k: int = 5
+) -> None:
+    """Measure similarity using the specified metric.
+
+    :param df: DataFrame with audio features
+    :param audio: Audio data to compare
+    :param metric: Similarity metric to use
+    :param top_k: Number of top similar results to return
+    :return: List of similarity results
+    """
+    engine = SimilarityEngine(metric=metric, normalize=True)
+    engine.fit(df)
+
+    results = engine.find_similar(audio, top_k=top_k)
+    logger.info(f"Top {top_k} similar results using {metric} metric:")
+    for rank, result in enumerate(results, start=1):
+        name = result.get("name", "unknown")
+        similarity = result["similarity"]
+        logger.info(f"{rank}. {name} - Similarity: {similarity:.4f}")

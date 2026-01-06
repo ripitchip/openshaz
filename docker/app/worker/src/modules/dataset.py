@@ -638,3 +638,45 @@ def get_features_dataframe(
 
     _save_dataframe(df, source, fma_size, limit)
     return df
+
+
+def create_dataframe(
+    limit: int | None,
+    log_level: str,
+    multi: bool,
+    recreate: bool,
+    source: str = "gtzan",
+    fma_size: str = "small",
+    force: bool = False,
+) -> None:
+    """Create a DataFrame with audio features from the dataset.
+
+    :param limit: Limit number of audio files to import
+    :param log_level: Logging level
+    :param multi: Use multiprocessing for feature extraction
+    :param recreate: Force recreation of dataset cache
+    :param source: Dataset source ('gtzan' or 'fma')
+    :param fma_size: FMA dataset size (only used if source='fma')
+    :param force: Force download of large datasets
+    :return: DataFrame with audio features
+    """
+    logger.debug("Importing audio dataset.")
+    dataset = get_audio_dataset(
+        limit=30 if limit else None,
+        log_level=log_level,
+        use_multiprocessing=multi,
+        recreate=recreate,
+        source=source,
+        fma_size=fma_size,
+        force=force,
+    )
+    logger.info(f"Imported {len(dataset)} audio files from dataset.")
+
+    logger.debug("Extracting features and creating DataFrame.")
+    df = get_features_dataframe(
+        dataset=dataset,
+        limit=30 if limit else None,
+        recreate=recreate,
+    )
+    logger.info(f"Created DataFrame with shape: {df.shape}")
+    return df

@@ -1,25 +1,37 @@
+import os
+import signal
 import sys
 import time
 from pathlib import Path
+from typing import Any
 
-import numpy as np
-import pandas as pd
+import pika
 from loguru import logger
 from models.audio import audio
-from modules.parser import parse_arguments
-from modules.dataset import get_audio_dataset, get_features_dataframe
+from modules.dataset import create_dataframe
 from modules.extraction import get_features
-from modules.similarity import SimilarityEngine, compare_metrics
+from modules.parser import parse_arguments
+from modules.similarity import compare_different_metrics, measure_similarity
 
 
 def start_logging(is_debug: bool, is_worker: bool) -> None:
-    """Initialize logging configuration."""
+    """Initialize logging configuration.
+
+    :param is_debug: Whether to enable debug logging
+    :param is_worker: Whether the application is running in worker mode
+    """
     logger.remove()
     log_level = "DEBUG" if is_debug else "INFO"
     logger.add(sys.stderr, level=log_level)
     if is_worker:
+        log_dir = (
+            Path("/app/worker_logs")
+            if os.path.exists("/app")
+            else Path("./worker_logs")
+        )
+        log_dir.mkdir(parents=True, exist_ok=True)
         logger.add(
-            "./worker_logs/worker.log",
+            str(log_dir / "worker.log"),
             rotation="500 MB",
             compression="zip",
             level="DEBUG",
@@ -27,94 +39,66 @@ def start_logging(is_debug: bool, is_worker: bool) -> None:
     logger.info("Starting OpenShaz, Open-source audio similarity tool.")
 
 
-def create_dataframe(
-    limit: int | None,
-    log_level: str,
-    multi: bool,
-    recreate: bool,
-    source: str = "gtzan",
-    fma_size: str = "small",
-    force: bool = False,
-) -> None:
-    """Create a DataFrame with audio features from the dataset.
+def extract_features(ch: Any, method: Any, properties: Any, body: bytes) -> None:
+    """Process audio feature extraction tasks from RabbitMQ.
 
-    :param limit: Limit number of audio files to import
-    :param log_level: Logging level
-    :param multi: Use multiprocessing for feature extraction
-    :param recreate: Force recreation of dataset cache
-    :param source: Dataset source ('gtzan' or 'fma')
-    :param fma_size: FMA dataset size (only used if source='fma')
-    :param force: Force download of large datasets
-    :return: DataFrame with audio features
+    :param ch: Channel
+    :param method: Delivery method
+    :param properties: Message properties
+    :param body: Message body
     """
-    logger.debug("Importing audio dataset.")
-    dataset = get_audio_dataset(
-        limit=30 if limit else None,
-        log_level=log_level,
-        use_multiprocessing=multi,
-        recreate=recreate,
-        source=source,
-        fma_size=fma_size,
-        force=force,
-    )
-    logger.info(f"Imported {len(dataset)} audio files from dataset.")
+    try:
+        logger.info(f"Received extraction task: {body.decode()}")
+        # TODO: fetch mp3 / wav
 
-    logger.debug("Extracting features and creating DataFrame.")
-    df = get_features_dataframe(
-        dataset=dataset,
-        limit=30 if limit else None,
-        recreate=recreate,
-    )
-    logger.info(f"Created DataFrame with shape: {df.shape}")
-    return df
+        # TODO: extract features
+
+        # IF ADD
+        # TODO: add to DB postgres, debug will be a mockup only logging result
+        # IF QUERY
+        # TODO: add new task in pool to measure similarity, with metrics into the task itself, maybe a call to the api to create the new job
+        logger.warning("Feature extraction not yet implemented")
+
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+    except Exception as e:
+        logger.error(f"Error processing extraction task: {e}")
+        logger.info("Requeuing the extraction task")
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
 
-def compare_different_metrics(
-    df, test_size: float = 0.2, top_k: int = 5, random_state: int = 42
-):
-    """Compare different similarity metrics on the same dataset.
+def process_similarity(ch: Any, method: Any, properties: Any, body: bytes) -> None:
+    """Process audio similarity comparison tasks from RabbitMQ.
 
-    :param df: DataFrame with audio features
-    :param test_size: Proportion of dataset to use for testing
-    :param top_k: Number of top matches to consider
-    :param random_state: Random seed for reproducibility
-    :return: DataFrame comparing metrics
+    :param ch: Channel
+    :param method: Delivery method
+    :param properties: Message properties
+    :param body: Message body
     """
-    logger.info("Comparing similarity metrics...")
-    comparison_df = compare_metrics(
-        df=df, test_size=test_size, top_k=top_k, random_state=random_state
-    )
-    logger.info(f"\nComparison results:\n{comparison_df}")
+    try:
+        logger.info(f"Received similarity task: {body.decode()}")
+        # TODO: Get audio metrics from task
 
+        # TODO: fetch audio features from DB postgres
 
-def measure_similarity(
-    df: pd.DataFrame, audio: np.ndarray, metric: str = "cosine", top_k: int = 5
-) -> None:
-    """Measure similarity using the specified metric.
+        # TODO: process similarity
 
-    :param df: DataFrame with audio features
-    :param audio: Audio data to compare
-    :param metric: Similarity metric to use
-    :param top_k: Number of top similar results to return
-    :return: List of similarity results
-    """
-    engine = SimilarityEngine(metric=metric, normalize=True)
-    engine.fit(df)
+        # TODO: return the n-similar audio references (ids)
+        logger.warning("Similarity processing not yet implemented")
 
-    results = engine.find_similar(audio, top_k=top_k)
-    logger.info(f"Top {top_k} similar results using {metric} metric:")
-    for rank, result in enumerate(results, start=1):
-        name = result.get("name", "unknown")
-        similarity = result["similarity"]
-        logger.info(f"{rank}. {name} - Similarity: {similarity:.4f}")
+        ch.basic_ack(delivery_tag=method.delivery_tag)
+    except Exception as e:
+        logger.error(f"Error processing similarity task: {e}")
+        logger.info("Requeuing the similarity task")
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
 
 
 @logger.catch
-def __main__():
+def main():
     args = parse_arguments()
 
     if args.command == "manual":
         start_logging(is_debug=args.debug, is_worker=False)
+        logger.info("Starting manual mode...")
         start_time = time.time()
         df = create_dataframe(
             limit=args.limit,
@@ -150,13 +134,59 @@ def __main__():
     elif args.command == "worker":
         start_logging(is_debug=args.debug, is_worker=True)
         logger.info("Starting worker mode...")
-        logger.info(f"Worker ID: {args.worker_id or 'auto-generated'}")
-        logger.info(f"Queue URL: {args.queue_url or 'default'}")
-        logger.info(f"Batch size: {args.batch_size}")
 
-        # TODO: Implement worker logic here
-        logger.warning("Worker mode not yet implemented")
+        RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+
+        connection = None
+        try:
+            connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
+            channel = connection.channel()
+            logger.info("Successfully connected to RabbitMQ")
+        except Exception as e:
+            logger.critical(f"Failed to connect to RabbitMQ: {e}")
+            return
+
+        extraction_queue_name = "audio_extraction_tasks"
+        similarity_queue_name = "audio_similarity_tasks"
+
+        channel.queue_declare(queue=extraction_queue_name, durable=True)
+        channel.queue_declare(queue=similarity_queue_name, durable=True)
+        logger.info(
+            f"Declared queues: {extraction_queue_name}, {similarity_queue_name}"
+        )
+
+        channel.basic_qos(prefetch_count=1)
+
+        channel.basic_consume(
+            queue=extraction_queue_name,
+            on_message_callback=extract_features,
+            auto_ack=False,
+        )
+        channel.basic_consume(
+            queue=similarity_queue_name,
+            on_message_callback=process_similarity,
+            auto_ack=False,
+        )
+
+        def signal_handler(signum, frame):
+            logger.info("Received shutdown signal, closing connection...")
+            if connection and connection.is_open:
+                connection.close()
+            sys.exit(0)
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        logger.info("Worker is waiting for messages. To exit press CTRL+C")
+        try:
+            channel.start_consuming()
+        except KeyboardInterrupt:
+            logger.info("Interrupted by user")
+        finally:
+            if connection and connection.is_open:
+                connection.close()
+                logger.info("Connection closed")
 
 
 if __name__ == "__main__":
-    __main__()
+    main()

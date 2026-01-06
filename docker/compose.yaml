@@ -14,7 +14,7 @@ services:
       POSTGRES_URL: postgres://music:musicpass@postgres:5432/musicdb
     depends_on:
       - rabbitmq
-      - minio
+      - rustfs
       - postgres
     networks:
       - internal
@@ -33,7 +33,7 @@ services:
     depends_on:
       - rabbitmq
       - postgres
-      - minio
+      - rustfs
     networks:
       - internal
     volumes:
@@ -118,10 +118,10 @@ services:
   rabbitmq:
     image: rabbitmq:3-management
     environment:
-      RABBITMQ_DEFAULT_USER: ${DEFAULT_RABBITMQ_USER}
-      RABBITMQ_DEFAULT_PASS: ${DEFAULT_RABBITMQ_PASS}
-      RABBITMQ_DEFAULT_VHOST: ${DEFAULT_RABBITMQ_VHOST}
-      RABBITMQ_ERLANG_COOKIE: ${DEFAULT_RABBITMQ_ERLANG_COOKIE}
+      RABBITMQ_DEFAULT_USER: ${RABBITMQ_DEFAULT_USER}
+      RABBITMQ_DEFAULT_PASS: ${RABBITMQ_DEFAULT_PASS}
+      RABBITMQ_DEFAULT_VHOST: ${RABBITMQ_DEFAULT_VHOST}
+      RABBITMQ_ERLANG_COOKIE: ${RABBITMQ_ERLANG_COOKIE}
     ports:
       - "5672:5672"     # AMQP protocol port
       - "15672:15672"   # RabbitMQ Management UI
