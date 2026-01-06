@@ -190,16 +190,65 @@ def _download_dataset(
         raise ValueError(f"Unknown source: {source}. Must be 'gtzan' or 'fma'")
 
 
-def _list_audio_filepaths() -> list[Path]:
-    """List all audio files in the GTZAN dataset.
+def _get_audio_directory(source: str = "gtzan", fma_size: str = "small") -> Path:
+    """Get the audio directory path for the specified dataset.
 
+    :param source: Dataset source - 'gtzan' or 'fma'
+    :param fma_size: FMA dataset size (only used if source='fma')
+    :return: Path to the audio directory
+    """
+    base_dir = Path(__file__).parent.parent.parent / "data" / "raw"
+
+    if source == "gtzan":
+        return base_dir / "Data" / "genres_original"
+    elif source == "fma":
+        return base_dir / f"fma_{fma_size}"
+    else:
+        raise ValueError(f"Unknown source: {source}. Must be 'gtzan' or 'fma'")
+
+
+def _is_dataset_extracted(source: str = "gtzan", fma_size: str = "small") -> bool:
+    """Check if the dataset is already extracted by looking for audio files.
+
+    :param source: Dataset source - 'gtzan' or 'fma'
+    :param fma_size: FMA dataset size (only used if source='fma')
+    :return: True if audio files are found, False otherwise
+    """
+    target_dir = _get_audio_directory(source, fma_size)
+
+    if not target_dir.exists():
+        return False
+
+    if source == "gtzan":
+        # Check for .wav files in GTZAN
+        return bool(list(target_dir.rglob("*.wav")))
+    elif source == "fma":
+        # Check for .mp3 files in FMA
+        return bool(list(target_dir.rglob("*.mp3")))
+    else:
+        return False
+
+
+def _list_audio_filepaths(source: str = "gtzan", fma_size: str = "small") -> list[Path]:
+    """List all audio files in the specified dataset.
+
+    :param source: Dataset source - 'gtzan' or 'fma'
+    :param fma_size: FMA dataset size (only used if source='fma')
     :return: List of Paths to audio files
     """
-    target_dir = Path(__file__).parent.parent.parent / "data" / "raw"
+    target_dir = _get_audio_directory(source, fma_size)
+    file_pattern = "*.wav" if source == "gtzan" else "*.mp3"
+
     logger.debug(f"Listing audio files in directory: {target_dir.as_posix()}")
 
-    audio_files = sorted(target_dir.rglob("*.wav"))
-    logger.info(f"Found {len(audio_files)} audio files in the dataset.")
+    if not target_dir.exists():
+        logger.warning(f"Target directory does not exist: {target_dir}")
+        return []
+
+    audio_files = sorted(target_dir.rglob(file_pattern))
+    logger.info(
+        f"Found {len(audio_files)} audio files in the {source.upper()} dataset."
+    )
     return audio_files
 
 
@@ -302,6 +351,7 @@ def _save_dataset(
     source: str = "gtzan",
     fma_size: str | None = None,
     limit: int | None = None,
+    append: bool = False,
 ) -> None:
     """Save the dataset to a JSON file and dataframe to CSV.
 
@@ -309,10 +359,19 @@ def _save_dataset(
     :param source: Dataset source ('gtzan' or 'fma')
     :param fma_size: FMA dataset size (only used if source='fma')
     :param limit: Optional limit used to differentiate cache files
+    :param append: If True, append to existing dataset; if False, overwrite
     """
     cache_path = _get_dataset_cache_path(source, fma_size, limit)
 
     json_data = []
+
+    # Load existing data if appending
+    if append and cache_path.exists():
+        with open(cache_path, "r") as f:
+            json_data = json.load(f)
+        logger.debug(f"Loaded {len(json_data)} existing records for appending")
+
+    # Add new data
     for audio_file in dataset:
         json_data.append(
             {
@@ -327,7 +386,7 @@ def _save_dataset(
 
     with open(cache_path, "w") as f:
         json.dump(json_data, f, indent=2)
-    logger.info(f"Dataset cached to: {cache_path}")
+    logger.info(f"Dataset cached to: {cache_path} (total records: {len(json_data)})")
 
 
 def _load_dataset(
@@ -363,20 +422,52 @@ def _load_dataset(
 
 
 def _import_audio_from_dataset(
-    limit: int, log_level: str = "INFO", use_multiprocessing: bool = True
+    limit: int,
+    log_level: str = "INFO",
+    use_multiprocessing: bool = True,
+    source: str = "gtzan",
+    fma_size: str = "small",
+    save_interval: int = 100,
+    resume: bool = True,
 ) -> list[audio]:
-    """Import audio files from the GTZAN dataset.
+    """Import audio files from the specified dataset.
 
     :param limit: Optional limit on the number of audio files to import
     :param log_level: Log level for worker processes (default: INFO)
     :param use_multiprocessing: Whether to use parallel processing (default: True)
+    :param source: Dataset source - 'gtzan' or 'fma' (default: 'gtzan')
+    :param fma_size: FMA dataset size (only used if source='fma')
+    :param save_interval: Save progress every N files (default: 100)
+    :param resume: Resume from existing cache if available (default: True)
     :return: List of audio dataclass instances
     """
 
-    audio_paths = _list_audio_filepaths()
+    audio_paths = _list_audio_filepaths(source=source, fma_size=fma_size)
     if limit is not None:
         audio_paths = audio_paths[:limit]
         logger.info(f"Limiting import to first {limit} audio files.")
+
+    # Try to resume from existing cache
+    audio_files = []
+    start_index = 0
+    processed_paths = set()
+
+    if resume:
+        existing_dataset = _load_dataset(source, fma_size, limit)
+        if existing_dataset:
+            audio_files = existing_dataset
+            processed_paths = {str(af.path) for af in existing_dataset}
+            start_index = len(audio_files)
+            logger.info(f"Resuming from {start_index} already processed files")
+
+            # Filter out already processed files
+            audio_paths = [p for p in audio_paths if str(p) not in processed_paths]
+
+    if not audio_paths:
+        logger.info("All files already processed!")
+        return audio_files
+
+    failed_count = 0
 
     if use_multiprocessing:
         num_processes = cpu_count()
@@ -385,16 +476,28 @@ def _import_audio_from_dataset(
         with Pool(
             processes=num_processes, initializer=_init_worker, initargs=(log_level,)
         ) as pool:
-            args = [(i, path) for i, path in enumerate(audio_paths)]
-            results = list(
-                tqdm(
-                    pool.imap(_process_single_audio, args),
-                    total=len(audio_paths),
-                    desc="Processing audio files",
-                )
-            )
-            audio_files = [af for af in results if af is not None]
-            failed_count = len(results) - len(audio_files)
+            # Adjust indices to account for already processed files
+            args = [(start_index + i, path) for i, path in enumerate(audio_paths)]
+
+            # Process results as they come, save periodically to avoid memory issues
+            with tqdm(total=len(audio_paths), desc="Processing audio files") as pbar:
+                for result in pool.imap(_process_single_audio, args):
+                    if result is not None:
+                        audio_files.append(result)
+                    else:
+                        failed_count += 1
+
+                    pbar.update(1)
+
+                    # Save progress periodically
+                    if len(audio_files) % save_interval == 0:
+                        _save_dataset(
+                            audio_files, source, fma_size, limit, append=False
+                        )
+                        logger.info(
+                            f"Progress saved: {len(audio_files)} total files processed"
+                        )
+
             if failed_count > 0:
                 logger.warning(f"Failed to process {failed_count} audio file(s)")
     else:
@@ -414,6 +517,14 @@ def _import_audio_from_dataset(
                 logger.debug(
                     f"Imported audio file: {audio_file.name}, assigned ID: {audio_file.id}"
                 )
+
+                # Save progress periodically
+                if (id_counter + 1) % save_interval == 0:
+                    _save_dataset(audio_files, source, fma_size, limit, append=False)
+                    logger.info(
+                        f"Progress saved: {id_counter + 1}/{len(audio_paths)} files"
+                    )
+
             except Exception as e:
                 logger.warning(
                     f"Failed to process {path.name}: {type(e).__name__} - {str(e)}"
@@ -434,6 +545,7 @@ def get_audio_dataset(
     source: str = "gtzan",
     fma_size: str = "small",
     force: bool = False,
+    save_interval: int = 100,
 ) -> list[audio]:
     """Create a music dataset from the specified source.
 
@@ -444,22 +556,33 @@ def get_audio_dataset(
     :param source: Dataset source - 'gtzan' or 'fma' (default: 'gtzan')
     :param fma_size: FMA dataset size - 'small', 'medium', 'large', or 'full' (default: 'small')
     :param force: Force download of large datasets like fma_full (default: False)
+    :param save_interval: Save progress every N files (default: 100)
     :return: List of audio dataclass instances
     """
+    # Only return cached if not recreating and cache is complete
     if not recreate:
-        cached_dataset = _load_dataset(limit)
+        cached_dataset = _load_dataset(source, fma_size, limit)
         if cached_dataset is not None:
-            return cached_dataset
+            # Check if cache is complete
+            audio_paths = _list_audio_filepaths(source=source, fma_size=fma_size)
+            if limit is not None:
+                expected_count = min(limit, len(audio_paths))
+            else:
+                expected_count = len(audio_paths)
 
-    target_dir = Path(__file__).parent.parent.parent / "data" / "raw"
-    if source == "gtzan":
-        target_dir = target_dir / "gtzan"
-    elif source == "fma":
-        target_dir = target_dir / f"fma_{fma_size}"
+            if len(cached_dataset) >= expected_count:
+                logger.info(
+                    f"Using complete cached dataset with {len(cached_dataset)} files"
+                )
+                return cached_dataset
+            else:
+                logger.info(
+                    f"Cache incomplete ({len(cached_dataset)}/{expected_count}), will resume processing"
+                )
 
-    logger.debug(f"Checking for dataset in directory: {target_dir.as_posix()}")
+    logger.debug(f"Checking if {source.upper()} dataset is extracted...")
 
-    if not target_dir.exists() or not any(target_dir.iterdir()):
+    if not _is_dataset_extracted(source, fma_size):
         logger.info(f"{source.upper()} dataset not found locally. Downloading...")
         _download_dataset(source, fma_size, force)
     else:
@@ -468,7 +591,13 @@ def get_audio_dataset(
         )
 
     dataset = _import_audio_from_dataset(
-        limit, log_level=log_level, use_multiprocessing=use_multiprocessing
+        limit,
+        log_level=log_level,
+        use_multiprocessing=use_multiprocessing,
+        source=source,
+        fma_size=fma_size,
+        save_interval=save_interval,
+        resume=not recreate,  # Resume unless recreating
     )
 
     _save_dataset(dataset, source, fma_size, limit)
@@ -476,17 +605,23 @@ def get_audio_dataset(
 
 
 def get_features_dataframe(
-    dataset: list[audio] = None, limit: int | None = None, recreate: bool = False
+    dataset: list[audio] = None,
+    limit: int | None = None,
+    recreate: bool = False,
+    source: str = "gtzan",
+    fma_size: str | None = None,
 ) -> pd.DataFrame:
     """Convert the dataset into a pandas DataFrame.
 
     :param dataset: List of audio dataclass instances
     :param limit: Optional limit used to differentiate cache files
     :param recreate: Force recreation of dataframe even if cache exists (default: False)
+    :param source: Dataset source - 'gtzan' or 'fma' (default: 'gtzan')
+    :param fma_size: FMA dataset size (only used if source='fma')
     :return: DataFrame containing audio features
     """
     if not recreate:
-        csv_path = _get_dataframe_cache_path(limit)
+        csv_path = _get_dataframe_cache_path(source, fma_size, limit)
         if csv_path.exists():
             df = pd.read_csv(csv_path)
             logger.info(f"Loaded cached DataFrame from: {csv_path}")
@@ -501,5 +636,5 @@ def get_features_dataframe(
     df = pd.DataFrame(data, columns=DEFAULT_DATAFRAME_COLUMNS)
     logger.info("Converted dataset to pandas DataFrame.")
 
-    _save_dataframe(df, limit)
+    _save_dataframe(df, source, fma_size, limit)
     return df

@@ -43,7 +43,6 @@ async def create_job(music_name: str, n_tasks: int = 10):
 
     conn.close()
     return {"status": "success", "job_id": job_id, "tasks_created": n_tasks}
-    import random # Add this at the top
 
 
 @app.post("/create_fake_tasks")
