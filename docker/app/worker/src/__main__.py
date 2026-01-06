@@ -1,3 +1,4 @@
+import json
 import os
 import signal
 import sys
@@ -12,6 +13,10 @@ from modules.dataset import create_dataframe
 from modules.extraction import get_features
 from modules.parser import parse_arguments
 from modules.similarity import compare_different_metrics, measure_similarity
+from modules.storage import (cleanup_downloaded_file,
+                             download_from_object_storage)
+
+RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 
 
 def start_logging(is_debug: bool, is_worker: bool) -> None:
@@ -48,16 +53,40 @@ def extract_features(ch: Any, method: Any, properties: Any, body: bytes) -> None
     :param body: Message body
     """
     try:
-        logger.info(f"Received extraction task: {body.decode()}")
-        # TODO: fetch mp3 / wav
+        payload = json.loads(body)
+        logger.info(f"Received extraction task: {payload}")
 
-        # TODO: extract features
+        music_name = payload.get("music_name")
+        bucket_url = payload.get("bucket_url")
 
-        # IF ADD
-        # TODO: add to DB postgres, debug will be a mockup only logging result
-        # IF QUERY
-        # TODO: add new task in pool to measure similarity, with metrics into the task itself, maybe a call to the api to create the new job
-        logger.warning("Feature extraction not yet implemented")
+        audio_path = download_from_object_storage(bucket_url)
+
+        test_audio = audio(name=Path(audio_path).stem, path=audio_path)
+        extracted_features = get_features(test_audio)
+
+        # TODO: Store features into PostgreSQL opensource_songs table
+        # store_song_features(music_name, extracted_features, bucket_url)
+
+        cleanup_downloaded_file(audio_path)
+
+        result = {
+            "job_id": payload.get("job_id"),
+            "music_name": music_name,
+            "bucket_url": bucket_url,
+            "status": "extracted",
+            "features": extracted_features,
+        }
+
+        if properties.reply_to:
+            ch.basic_publish(
+                exchange="",
+                routing_key=properties.reply_to,
+                properties=pika.BasicProperties(
+                    correlation_id=properties.correlation_id,
+                    delivery_mode=2,
+                ),
+                body=json.dumps(result),
+            )
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
@@ -69,21 +98,62 @@ def extract_features(ch: Any, method: Any, properties: Any, body: bytes) -> None
 def process_similarity(ch: Any, method: Any, properties: Any, body: bytes) -> None:
     """Process audio similarity comparison tasks from RabbitMQ.
 
+    Workflow:
+    1. Download query song from bucket_url
+    2. Extract features from query song
+    3. Fetch all opensource song features from PostgreSQL
+    4. Compare query features against opensource features
+    5. Return top_k most similar songs
+
     :param ch: Channel
     :param method: Delivery method
     :param properties: Message properties
     :param body: Message body
     """
     try:
-        logger.info(f"Received similarity task: {body.decode()}")
-        # TODO: Get audio metrics from task
+        payload = json.loads(body)
+        logger.info(f"Received similarity task: {payload}")
 
-        # TODO: fetch audio features from DB postgres
+        music_name = payload.get("music_name")
+        bucket_url = payload.get("bucket_url")
+        top_k = payload.get("top_k", 5)
 
-        # TODO: process similarity
+        query_audio_path = download_from_object_storage(bucket_url)
 
-        # TODO: return the n-similar audio references (ids)
-        logger.warning("Similarity processing not yet implemented")
+        # Extract features from query song
+        query_audio = audio(name=Path(query_audio_path).stem, path=query_audio_path)
+        query_features = get_features(query_audio)
+        _ = query_features
+
+        cleanup_downloaded_file(query_audio_path)
+
+        # TODO: Fetch all opensource song features from PostgreSQL
+        # opensource_songs = fetch_all_opensource_features()
+
+        # TODO: Compare query_features against opensource_songs using similarity metric
+        # similar_results = measure_similarity(df, audio=query_features, metric="cosine", top_k=top_k)
+
+        # Placeholder until DB-backed search is wired
+        similar = [{"music_name": "sample_track_1", "score": 0.91}][:top_k]
+
+        result = {
+            "job_id": payload.get("job_id"),
+            "query_song": music_name,
+            "bucket_url": bucket_url,
+            "status": "completed",
+            "similar": similar,
+        }
+
+        if properties.reply_to:
+            ch.basic_publish(
+                exchange="",
+                routing_key=properties.reply_to,
+                properties=pika.BasicProperties(
+                    correlation_id=properties.correlation_id,
+                    delivery_mode=2,
+                ),
+                body=json.dumps(result),
+            )
 
         ch.basic_ack(delivery_tag=method.delivery_tag)
     except Exception as e:
@@ -134,8 +204,6 @@ def main():
     elif args.command == "worker":
         start_logging(is_debug=args.debug, is_worker=True)
         logger.info("Starting worker mode...")
-
-        RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 
         connection = None
         try:

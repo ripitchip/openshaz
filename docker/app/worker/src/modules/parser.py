@@ -75,22 +75,6 @@ def parse_arguments() -> argparse.Namespace:
     worker_parser.add_argument(
         "--debug", action="store_true", help="Run with debug console"
     )
-    worker_parser.add_argument(
-        "--queue-url",
-        type=str,
-        help="Queue URL for receiving tasks",
-    )
-    worker_parser.add_argument(
-        "--worker-id",
-        type=str,
-        help="Worker identifier",
-    )
-    worker_parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=10,
-        help="Number of tasks to process in parallel (default: 10)",
-    )
 
     args = parser.parse_args()
 

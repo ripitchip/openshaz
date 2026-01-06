@@ -5,12 +5,17 @@ services:
   api:
     build: ./app/api
     ports:
-      - "8000:8000"
+      - "${FASTAPI_PORT}:${FASTAPI_PORT}"
     environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
-      MINIO_ENDPOINT: minio:9000
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
+      FASTAPI_HOST: ${FASTAPI_HOST}
+      FASTAPI_PORT: ${FASTAPI_PORT}
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      OBJECT_STORAGE_URL: ${OBJECT_STORAGE_URL}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION}
+      EXTRACTION_BUCKET_NAME: ${EXTRACTION_BUCKET_NAME}
+      SIMILARITY_BUCKET_NAME: ${SIMILARITY_BUCKET_NAME}
       POSTGRES_URL: postgres://music:musicpass@postgres:5432/musicdb
     depends_on:
       - rabbitmq
@@ -24,12 +29,14 @@ services:
     deploy:
       replicas: 3
     environment:
-      RABBITMQ_URL: amqp://guest:guest@rabbitmq:5672/
+      RABBITMQ_URL: ${RABBITMQ_URL}
+      OBJECT_STORAGE_URL: ${OBJECT_STORAGE_URL}
+      OBJECT_STORAGE_ACCESS_KEY: ${OBJECT_STORAGE_ACCESS_KEY}
+      OBJECT_STORAGE_SECRET_KEY: ${OBJECT_STORAGE_SECRET_KEY}
+      OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION}
+      EXTRACTION_BUCKET_NAME: ${EXTRACTION_BUCKET_NAME}
+      SIMILARITY_BUCKET_NAME: ${SIMILARITY_BUCKET_NAME}
       POSTGRES_URL: postgres://music:musicpass@postgres:5432/musicdb
-      MINIO_ENDPOINT: http://minio:9000
-      MINIO_ROOT_USER: minioadmin
-      MINIO_ROOT_PASSWORD: minioadmin
-      WORKER_LOG_PATH: /worker_logs/worker.log
     depends_on:
       - rabbitmq
       - postgres
