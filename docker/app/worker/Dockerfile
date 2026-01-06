@@ -2,12 +2,9 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Install dependencies
-COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
+COPY pyproject.toml .
+RUN pip install --no-cache-dir -e .
 
-# Copy source code
-COPY . .
+COPY src/ ./src/
 
-# Run the python script
-CMD ["python", "main.py"]
+CMD ["python", "src"]
