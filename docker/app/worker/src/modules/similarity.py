@@ -262,7 +262,7 @@ def compare_different_metrics(
 
 def measure_similarity(
     df: pd.DataFrame, audio: np.ndarray, metric: str = "cosine", top_k: int = 5
-) -> None:
+) -> list[dict]:
     """Measure similarity using the specified metric.
 
     :param df: DataFrame with audio features
@@ -280,3 +280,5 @@ def measure_similarity(
         name = result.get("name", "unknown")
         similarity = result["similarity"]
         logger.info(f"{rank}. {name} - Similarity: {similarity:.4f}")
+
+    return results

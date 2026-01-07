@@ -5,10 +5,10 @@ import uuid
 from typing import Any, BinaryIO, Dict
 
 import boto3
+import pika
 from botocore.client import Config
 from botocore.exceptions import ClientError
 from loguru import logger
-import pika
 
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 EXTRACTION_QUEUE = "audio_extraction_tasks"
@@ -59,10 +59,17 @@ def upload_to_object_storage(
             logger.info(f"Bucket {bucket_name} doesn't exist, creating it")
             s3_client.create_bucket(Bucket=bucket_name)
 
+        object_url = f"{OBJECT_STORAGE_URL}/{bucket_name}/{file_name}"
+        try:
+            s3_client.head_object(Bucket=bucket_name, Key=file_name)
+            logger.info(f"File already exists in storage: {object_url}")
+            return object_url
+        except ClientError as e:
+            if e.response["Error"]["Code"] != "404":
+                raise
+
         logger.info(f"Uploading {file_name} to bucket {bucket_name}")
         s3_client.upload_fileobj(file_obj, bucket_name, file_name)
-
-        object_url = f"{OBJECT_STORAGE_URL}/{bucket_name}/{file_name}"
         logger.info(f"File uploaded successfully: {object_url}")
         return object_url
 

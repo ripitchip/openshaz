@@ -17,9 +17,7 @@ POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "musicpass")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "musicdb")
 POSTGRES_ADDRESS = os.getenv("POSTGRES_ADDRESS", "postgres")
 POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
-POSTGRES_URL = (
-    f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_ADDRESS}:{POSTGRES_PORT}/{POSTGRES_DB}"
-)
+POSTGRES_URL = f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_ADDRESS}:{POSTGRES_PORT}/{POSTGRES_DB}"
 
 engine = create_engine(
     POSTGRES_URL,
@@ -102,7 +100,7 @@ def store_opensource_song(
         if existing:
             logger.info(f"Opensource song already exists: {name} (id={song_id})")
             return existing
-        
+
         song = OpensourceSong(
             id=song_id, name=name, bucket_url=bucket_url, features=features
         )
@@ -136,7 +134,7 @@ def store_query_song(
         if existing:
             logger.info(f"Query song already exists: {name} (id={song_id})")
             return existing
-        
+
         song = QuerySong(
             id=song_id, name=name, bucket_url=bucket_url, features=features
         )
@@ -156,7 +154,7 @@ def get_all_opensource_songs() -> List[Dict[str, Any]]:
         songs = session.execute(select(OpensourceSong)).scalars().all()
         result = [
             {
-                "id": song.id,  # Now an integer
+                "id": song.id,
                 "name": song.name,
                 "bucket_url": song.bucket_url,
                 "features": song.features,

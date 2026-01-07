@@ -6,31 +6,38 @@ import time
 from pathlib import Path
 from typing import Any
 
+import numpy as np
+import pandas as pd
 import pika
 from loguru import logger
 from models.audio import audio
 from modules.database import (
     get_all_opensource_songs,
+    get_query_song_by_name,
     init_database,
     store_opensource_song,
     store_query_song,
     wipe_all_tables,
 )
-from modules.dataset import create_dataframe
+from modules.dataset import convert_list_of_dicts_to_dataframe, create_dataframe
 from modules.extraction import get_features
 from modules.parser import parse_arguments
 from modules.similarity import compare_different_metrics, measure_similarity
+from modules.storage import check_connection as check_storage_connection
 from modules.storage import (
-    check_connection as check_storage_connection,
+    cleanup_downloaded_file,
+    download_from_object_storage,
     wipe_all_buckets,
 )
-from modules.storage import cleanup_downloaded_file, download_from_object_storage
+from sqlalchemy.exc import SQLAlchemyError
 
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
 EXTRACTION_BUCKET_NAME = os.getenv("EXTRACTION_BUCKET_NAME", "opensource-songs")
 SIMILARITY_BUCKET_NAME = os.getenv("SIMILARITY_BUCKET_NAME", "query-songs")
 
 MAX_JOB_RETRIES = 3  # Maximum number of times a job can be requeued
+
+cached_dataframe: pd.DataFrame = None
 
 
 def get_retry_count(properties: Any) -> int:
@@ -103,7 +110,7 @@ def start_logging(is_debug: bool, is_worker: bool) -> None:
     """
     logger.remove()
     log_level = "DEBUG" if is_debug else "INFO"
-    logger.add(sys.stderr, level=log_level)
+    logger.add(sys.stderr, level=log_level, colorize=True)
     if is_worker:
         log_dir = (
             Path("/app/worker_logs")
@@ -149,8 +156,15 @@ def extract_features(ch: Any, method: Any, properties: Any, body: bytes) -> None
                 else list(extracted_features),
             )
             logger.info(f"Stored features for {music_name} with id {stored_song.id}")
-        except Exception as db_error:
-            logger.error(f"Database storage failed: {db_error}. Requeuing job.")
+        except SQLAlchemyError as db_error:
+            logger.error(
+                f"Database error storing opensource song: {db_error}. Requeuing job."
+            )
+            cleanup_downloaded_file(audio_path)
+            requeue_with_retry_count(ch, method, properties, body)
+            return
+        except (ValueError, TypeError) as data_error:
+            logger.error(f"Data validation error: {data_error}. Requeuing job.")
             cleanup_downloaded_file(audio_path)
             requeue_with_retry_count(ch, method, properties, body)
             return
@@ -201,51 +215,79 @@ def process_similarity(ch: Any, method: Any, properties: Any, body: bytes) -> No
         bucket_url = payload.get("bucket_url")
         top_k = payload.get("top_k", 5)
 
-        query_audio_path = download_from_object_storage(bucket_url)
+        existing_query = get_query_song_by_name(music_name)
 
-        query_audio = audio(name=Path(query_audio_path).stem, path=query_audio_path)
-        query_features = get_features(query_audio)
-
-        try:
-            stored_query = store_query_song(
-                name=music_name,
-                bucket_url=bucket_url,
-                features=query_features.tolist()
-                if hasattr(query_features, "tolist")
-                else list(query_features),
-            )
-            logger.info(f"Stored query song {music_name} with id {stored_query.id}")
-        except Exception as db_error:
-            logger.error(f"Query song storage failed: {db_error}. Requeuing job.")
-            cleanup_downloaded_file(query_audio_path)
-            requeue_with_retry_count(ch, method, properties, body)
-            return
-
-        try:
-            opensource_songs = get_all_opensource_songs()
+        if existing_query:
             logger.info(
-                f"Fetched {len(opensource_songs)} opensource songs for comparison"
+                f"Query song {music_name} already exists, using cached features"
             )
+            query_features = np.array(existing_query.features)
+        else:
+            logger.info(f"Query song {music_name} not found, extracting features")
+            query_audio_path = download_from_object_storage(bucket_url)
 
-            if not opensource_songs:
+            query_audio = audio(name=Path(query_audio_path).stem, path=query_audio_path)
+            query_features = get_features(query_audio)
+
+            try:
+                stored_query = store_query_song(
+                    name=music_name,
+                    bucket_url=bucket_url,
+                    features=query_features.tolist()
+                    if hasattr(query_features, "tolist")
+                    else list(query_features),
+                )
+                logger.info(f"Stored query song {music_name} with id {stored_query.id}")
+            except SQLAlchemyError as db_error:
+                logger.error(
+                    f"Database error storing query song: {db_error}. Requeuing job."
+                )
+                cleanup_downloaded_file(query_audio_path)
+                requeue_with_retry_count(ch, method, properties, body)
+                return
+            except (ValueError, TypeError) as data_error:
+                logger.error(
+                    f"Data validation error for query song: {data_error}. Requeuing job."
+                )
+                cleanup_downloaded_file(query_audio_path)
+                requeue_with_retry_count(ch, method, properties, body)
+                return
+
+            cleanup_downloaded_file(query_audio_path)
+
+        try:
+            global cached_dataframe
+            if cached_dataframe is None:
+                cached_dataframe = convert_list_of_dicts_to_dataframe(
+                    get_all_opensource_songs()
+                )
+
+            if cached_dataframe is None or cached_dataframe.empty:
                 logger.warning("No opensource songs in database for comparison")
                 similar = []
             else:
-                # TODO: Use measure_similarity with the fetched songs and query_features
-                # For now, return placeholder until we adapt measure_similarity to work with DB data
-                similar = [
-                    {"music_name": song["name"], "score": 0.85}
-                    for song in opensource_songs[:top_k]
-                ]
-        except Exception as db_error:
+                similar = measure_similarity(
+                    df=cached_dataframe,
+                    audio=query_features,
+                    metric="cosine",
+                    top_k=top_k,
+                )
+        except SQLAlchemyError as db_error:
             logger.error(
-                f"Failed to fetch opensource songs: {db_error}. Requeuing job."
+                f"Database error fetching opensource songs: {db_error}. Requeuing job."
             )
-            cleanup_downloaded_file(query_audio_path)
             requeue_with_retry_count(ch, method, properties, body)
             return
-
-        cleanup_downloaded_file(query_audio_path)
+        except (pd.errors.EmptyDataError, KeyError, ValueError) as data_error:
+            logger.error(f"Dataframe processing error: {data_error}. Requeuing job.")
+            requeue_with_retry_count(ch, method, properties, body)
+            return
+        except Exception as similarity_error:
+            logger.error(
+                f"Similarity computation error: {similarity_error}. Requeuing job."
+            )
+            requeue_with_retry_count(ch, method, properties, body)
+            return
 
         result = {
             "job_id": payload.get("job_id"),
@@ -319,7 +361,6 @@ def main():
         max_retries = 3
         wait_seconds_before_retry = 5
 
-        # Check database connection
         for attempt in range(1, max_retries + 1):
             try:
                 init_database()
@@ -336,7 +377,6 @@ def main():
                     return
                 time.sleep(wait_seconds_before_retry)
 
-        # Check RabbitMQ connection
         connection = None
         for attempt in range(1, max_retries + 1):
             try:
@@ -355,7 +395,6 @@ def main():
                     return
                 time.sleep(wait_seconds_before_retry)
 
-        # Check object storage connection
         for attempt in range(1, max_retries + 1):
             try:
                 if check_storage_connection():

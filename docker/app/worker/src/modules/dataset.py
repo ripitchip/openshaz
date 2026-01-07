@@ -4,15 +4,15 @@ import sys
 import zipfile
 from multiprocessing import Pool, cpu_count
 from pathlib import Path
+from typing import Any, Dict, List
 
 import kagglehub
 import numpy as np
 import pandas as pd
 from loguru import logger
-from tqdm import tqdm
-
 from models.audio import audio
 from modules.extraction import get_features
+from tqdm import tqdm
 
 DEFAULT_DATAFRAME_COLUMNS = [
     "id",
@@ -679,4 +679,22 @@ def create_dataframe(
         recreate=recreate,
     )
     logger.info(f"Created DataFrame with shape: {df.shape}")
+    return df
+
+
+def convert_list_of_dicts_to_dataframe(
+    audio_list: List[Dict[str, Any]],
+) -> pd.DataFrame:
+    """Convert a list of audio feature dictionaries to a pandas DataFrame.
+
+    :param audio_list: List of dictionaries with audio features
+    :return: DataFrame containing audio features
+    """
+    data = []
+    for item in audio_list:
+        row = [item["id"], item["name"]] + item["features"]
+        data.append(row)
+
+    df = pd.DataFrame(data, columns=DEFAULT_DATAFRAME_COLUMNS)
+    logger.info("Converted audio list to pandas DataFrame.")
     return df
