@@ -151,14 +151,14 @@ services:
       - internal
 
 
-  postgres_exporter:
-    image: prometheuscommunity/postgres-exporter
-    environment:
-      DATA_SOURCE_NAME: ${POSTGRES_EXPORTER_DATA_SOURCE_NAME}
-    networks:
-      - internal
-    depends_on:
-      - postgres
+  # postgres_exporter:
+  #   image: prometheuscommunity/postgres-exporter
+  #   environment:
+  #     DATA_SOURCE_NAME: ${POSTGRES_EXPORTER_DATA_SOURCE_NAME}
+  #   networks:
+  #     - internal
+  #   depends_on:
+  #     - postgres
 
 networks:
   internal:
