@@ -27,8 +27,8 @@ services:
       "python",
       "src", 
       "worker", 
-      "--wipe-database", 
-      "--wipe-storage",
+      # "--wipe-database", 
+      # "--wipe-storage",
       "--debug"]
     deploy:
       replicas: 10
