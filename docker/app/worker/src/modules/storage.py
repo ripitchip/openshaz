@@ -15,6 +15,34 @@ OBJECT_STORAGE_SECRET_KEY = os.getenv("OBJECT_STORAGE_SECRET_KEY")
 OBJECT_STORAGE_REGION = os.getenv("OBJECT_STORAGE_REGION", "eu-west-1")
 
 
+def check_connection() -> bool:
+    """Check if object storage is accessible.
+
+    :return: True if connection successful, False otherwise
+    :raises ValueError: If credentials are not set
+    """
+    if not OBJECT_STORAGE_ACCESS_KEY or not OBJECT_STORAGE_SECRET_KEY:
+        raise ValueError(
+            "OBJECT_STORAGE_ACCESS_KEY and OBJECT_STORAGE_SECRET_KEY must be set"
+        )
+
+    try:
+        s3_client = boto3.client(
+            "s3",
+            endpoint_url=OBJECT_STORAGE_URL,
+            aws_access_key_id=OBJECT_STORAGE_ACCESS_KEY,
+            aws_secret_access_key=OBJECT_STORAGE_SECRET_KEY,
+            config=Config(signature_version="s3v4", connect_timeout=5, read_timeout=5),
+            region_name=OBJECT_STORAGE_REGION,
+        )
+        # List buckets as a health check
+        s3_client.list_buckets()
+        return True
+    except Exception as e:
+        logger.debug(f"Object storage health check failed: {e}")
+        return False
+
+
 def _parse_s3_url(url: str) -> tuple[str, str]:
     """Parse S3-style URL to extract bucket and key.
 

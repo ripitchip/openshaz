@@ -1,2 +1,4 @@
 fastapi[standard]
 pika
+boto3
+loguru

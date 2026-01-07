@@ -9,14 +9,84 @@ from typing import Any
 import pika
 from loguru import logger
 from models.audio import audio
+from modules.database import (
+    get_all_opensource_songs,
+    init_database,
+    store_opensource_song,
+    store_query_song,
+)
 from modules.dataset import create_dataframe
 from modules.extraction import get_features
 from modules.parser import parse_arguments
 from modules.similarity import compare_different_metrics, measure_similarity
+from modules.storage import check_connection as check_storage_connection
 from modules.storage import (cleanup_downloaded_file,
                              download_from_object_storage)
 
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+MAX_JOB_RETRIES = 3  # Maximum number of times a job can be requeued
+
+
+def get_retry_count(properties: Any) -> int:
+    """Get the current retry count from message headers.
+
+    :param properties: Message properties
+    :return: Current retry count (0 if not set)
+    """
+    if properties.headers and "x-retry-count" in properties.headers:
+        return int(properties.headers["x-retry-count"])
+    return 0
+
+
+def should_requeue(properties: Any) -> bool:
+    """Check if a message should be requeued based on retry count.
+
+    :param properties: Message properties
+    :return: True if should requeue, False if max retries exceeded
+    """
+    retry_count = get_retry_count(properties)
+    return retry_count < MAX_JOB_RETRIES
+
+
+def requeue_with_retry_count(
+    ch: Any, method: Any, properties: Any, body: bytes
+) -> None:
+    """Requeue a message with incremented retry count.
+
+    :param ch: Channel
+    :param method: Delivery method
+    :param properties: Message properties
+    :param body: Message body
+    """
+    retry_count = get_retry_count(properties) + 1
+
+    if retry_count > MAX_JOB_RETRIES:
+        logger.critical(
+            f"Job exceeded maximum retries ({MAX_JOB_RETRIES}). Discarding message."
+        )
+        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=False)
+    else:
+        logger.warning(f"Requeuing job (attempt {retry_count}/{MAX_JOB_RETRIES})")
+        # Create new properties with updated retry count
+        headers = properties.headers or {}
+        headers["x-retry-count"] = retry_count
+
+        new_properties = pika.BasicProperties(
+            headers=headers,
+            correlation_id=properties.correlation_id,
+            reply_to=properties.reply_to,
+            delivery_mode=2,
+        )
+
+        # Republish with updated headers
+        ch.basic_publish(
+            exchange="",
+            routing_key=method.routing_key,
+            properties=new_properties,
+            body=body,
+        )
+        # Acknowledge original message
+        ch.basic_ack(delivery_tag=method.delivery_tag)
 
 
 def start_logging(is_debug: bool, is_worker: bool) -> None:
@@ -64,8 +134,20 @@ def extract_features(ch: Any, method: Any, properties: Any, body: bytes) -> None
         test_audio = audio(name=Path(audio_path).stem, path=audio_path)
         extracted_features = get_features(test_audio)
 
-        # TODO: Store features into PostgreSQL opensource_songs table
-        # store_song_features(music_name, extracted_features, bucket_url)
+        try:
+            stored_song = store_opensource_song(
+                name=music_name,
+                bucket_url=bucket_url,
+                features=extracted_features.tolist()
+                if hasattr(extracted_features, "tolist")
+                else list(extracted_features),
+            )
+            logger.info(f"Stored features for {music_name} with id {stored_song.id}")
+        except Exception as db_error:
+            logger.error(f"Database storage failed: {db_error}. Requeuing job.")
+            cleanup_downloaded_file(audio_path)
+            requeue_with_retry_count(ch, method, properties, body)
+            return
 
         cleanup_downloaded_file(audio_path)
 
@@ -74,7 +156,9 @@ def extract_features(ch: Any, method: Any, properties: Any, body: bytes) -> None
             "music_name": music_name,
             "bucket_url": bucket_url,
             "status": "extracted",
-            "features": extracted_features,
+            "features": extracted_features.tolist()
+            if hasattr(extracted_features, "tolist")
+            else list(extracted_features),
         }
 
         if properties.reply_to:
@@ -92,18 +176,11 @@ def extract_features(ch: Any, method: Any, properties: Any, body: bytes) -> None
     except Exception as e:
         logger.error(f"Error processing extraction task: {e}")
         logger.info("Requeuing the extraction task")
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        requeue_with_retry_count(ch, method, properties, body)
 
 
 def process_similarity(ch: Any, method: Any, properties: Any, body: bytes) -> None:
     """Process audio similarity comparison tasks from RabbitMQ.
-
-    Workflow:
-    1. Download query song from bucket_url
-    2. Extract features from query song
-    3. Fetch all opensource song features from PostgreSQL
-    4. Compare query features against opensource features
-    5. Return top_k most similar songs
 
     :param ch: Channel
     :param method: Delivery method
@@ -120,21 +197,49 @@ def process_similarity(ch: Any, method: Any, properties: Any, body: bytes) -> No
 
         query_audio_path = download_from_object_storage(bucket_url)
 
-        # Extract features from query song
         query_audio = audio(name=Path(query_audio_path).stem, path=query_audio_path)
         query_features = get_features(query_audio)
-        _ = query_features
+
+        try:
+            stored_query = store_query_song(
+                name=music_name,
+                bucket_url=bucket_url,
+                features=query_features.tolist()
+                if hasattr(query_features, "tolist")
+                else list(query_features),
+            )
+            logger.info(f"Stored query song {music_name} with id {stored_query.id}")
+        except Exception as db_error:
+            logger.error(f"Query song storage failed: {db_error}. Requeuing job.")
+            cleanup_downloaded_file(query_audio_path)
+            requeue_with_retry_count(ch, method, properties, body)
+            return
+
+        try:
+            opensource_songs = get_all_opensource_songs()
+            logger.info(
+                f"Fetched {len(opensource_songs)} opensource songs for comparison"
+            )
+
+            if not opensource_songs:
+                logger.warning("No opensource songs in database for comparison")
+                similar = []
+            else:
+                # TODO: Use measure_similarity with the fetched songs and query_features
+                # For now, return placeholder until we adapt measure_similarity to work with DB data
+                similar = [
+                    {"music_name": song["name"], "score": 0.85}
+                    for song in opensource_songs[:top_k]
+                ]
+        except Exception as db_error:
+            logger.error(
+                f"Failed to fetch opensource songs: {db_error}. Requeuing job."
+            )
+            cleanup_downloaded_file(query_audio_path)
+            requeue_with_retry_count(ch, method, properties, body)
+            return
 
         cleanup_downloaded_file(query_audio_path)
-
-        # TODO: Fetch all opensource song features from PostgreSQL
-        # opensource_songs = fetch_all_opensource_features()
-
-        # TODO: Compare query_features against opensource_songs using similarity metric
-        # similar_results = measure_similarity(df, audio=query_features, metric="cosine", top_k=top_k)
-
-        # Placeholder until DB-backed search is wired
-        similar = [{"music_name": "sample_track_1", "score": 0.91}][:top_k]
 
         result = {
             "job_id": payload.get("job_id"),
@@ -159,7 +264,7 @@ def process_similarity(ch: Any, method: Any, properties: Any, body: bytes) -> No
     except Exception as e:
         logger.error(f"Error processing similarity task: {e}")
         logger.info("Requeuing the similarity task")
-        ch.basic_nack(delivery_tag=method.delivery_tag, requeue=True)
+        requeue_with_retry_count(ch, method, properties, body)
 
 
 @logger.catch
@@ -205,14 +310,65 @@ def main():
         start_logging(is_debug=args.debug, is_worker=True)
         logger.info("Starting worker mode...")
 
+        max_retries = 3
+        wait_seconds_before_retry = 5
+
+        # Check database connection
+        for attempt in range(1, max_retries + 1):
+            try:
+                init_database()
+                logger.info("Successfully connected to the database")
+                break
+            except Exception as e:
+                logger.warning(
+                    f"Database initialization attempt {attempt}/{max_retries} failed: {e}"
+                )
+                if attempt == max_retries:
+                    logger.critical(
+                        f"Failed to initialize database after {max_retries} attempts. Cannot continue."
+                    )
+                    return
+                time.sleep(wait_seconds_before_retry)
+
+        # Check RabbitMQ connection
         connection = None
-        try:
-            connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
-            channel = connection.channel()
-            logger.info("Successfully connected to RabbitMQ")
-        except Exception as e:
-            logger.critical(f"Failed to connect to RabbitMQ: {e}")
-            return
+        for attempt in range(1, max_retries + 1):
+            try:
+                connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
+                channel = connection.channel()
+                logger.info("Successfully connected to RabbitMQ")
+                break
+            except Exception as e:
+                logger.warning(
+                    f"RabbitMQ connection attempt {attempt}/{max_retries} failed: {e}"
+                )
+                if attempt == max_retries:
+                    logger.critical(
+                        f"Failed to connect to RabbitMQ after {max_retries} attempts. Cannot continue."
+                    )
+                    return
+                time.sleep(wait_seconds_before_retry)
+
+        # Check object storage connection
+        for attempt in range(1, max_retries + 1):
+            try:
+                if check_storage_connection():
+                    logger.info("Successfully connected to object storage")
+                    break
+                else:
+                    raise ConnectionError("Object storage health check failed")
+            except Exception as e:
+                logger.warning(
+                    f"Object storage connection attempt {attempt}/{max_retries} failed: {e}"
+                )
+                if attempt == max_retries:
+                    logger.critical(
+                        f"Failed to connect to object storage after {max_retries} attempts. Cannot continue."
+                    )
+                    if connection and connection.is_open:
+                        connection.close()
+                    return
+                time.sleep(wait_seconds_before_retry)
 
         extraction_queue_name = "audio_extraction_tasks"
         similarity_queue_name = "audio_similarity_tasks"

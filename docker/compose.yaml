@@ -16,7 +16,6 @@ services:
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION}
       EXTRACTION_BUCKET_NAME: ${EXTRACTION_BUCKET_NAME}
       SIMILARITY_BUCKET_NAME: ${SIMILARITY_BUCKET_NAME}
-      POSTGRES_URL: postgres://music:musicpass@postgres:5432/musicdb
     depends_on:
       - rabbitmq
       - rustfs
@@ -27,7 +26,7 @@ services:
   worker:
     build: ./app/worker
     deploy:
-      replicas: 3
+      replicas: 1
     environment:
       RABBITMQ_URL: ${RABBITMQ_URL}
       OBJECT_STORAGE_URL: ${OBJECT_STORAGE_URL}
@@ -36,7 +35,9 @@ services:
       OBJECT_STORAGE_REGION: ${OBJECT_STORAGE_REGION}
       EXTRACTION_BUCKET_NAME: ${EXTRACTION_BUCKET_NAME}
       SIMILARITY_BUCKET_NAME: ${SIMILARITY_BUCKET_NAME}
-      POSTGRES_URL: postgres://music:musicpass@postgres:5432/musicdb
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
     depends_on:
       - rabbitmq
       - postgres
