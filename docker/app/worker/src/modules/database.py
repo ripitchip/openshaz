@@ -15,9 +15,10 @@ from sqlalchemy.pool import QueuePool
 POSTGRES_USER = os.getenv("POSTGRES_USER", "music")
 POSTGRES_PASSWORD = os.getenv("POSTGRES_PASSWORD", "musicpass")
 POSTGRES_DB = os.getenv("POSTGRES_DB", "musicdb")
-POSTGRES_ADDRESS = os.getenv("POSTGRES_ADDRESS", "postgres:5432")
+POSTGRES_ADDRESS = os.getenv("POSTGRES_ADDRESS", "postgres")
+POSTGRES_PORT = os.getenv("POSTGRES_PORT", "5432")
 POSTGRES_URL = (
-    f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_ADDRESS}/{POSTGRES_DB}"
+    f"postgresql://{POSTGRES_USER}:{POSTGRES_PASSWORD}@{POSTGRES_ADDRESS}:{POSTGRES_PORT}/{POSTGRES_DB}"
 )
 
 engine = create_engine(
