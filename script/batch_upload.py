@@ -9,9 +9,10 @@ import argparse
 import asyncio
 import json
 import sys
+import time
 from pathlib import Path
 from typing import Dict, List, Set
-import time
+
 import aiofiles
 import aiohttp
 from loguru import logger
@@ -94,6 +95,12 @@ class BatchUploader:
         if file_key in self.uploaded:
             return True
 
+        # Dry run mode - simulate upload without actual HTTP request
+        if self.dry_run:
+            await asyncio.sleep(0.1)  # Simulate processing time
+            self.successful.append(file_key)
+            return True
+
         try:
             async with aiofiles.open(file_path, "rb") as f:
                 file_content = await f.read()
@@ -131,25 +138,27 @@ class BatchUploader:
         :param file_paths: List of file paths to upload
         """
         semaphore = asyncio.Semaphore(self.max_concurrent)
+        completed_count = 0
 
         async def bounded_upload(session: aiohttp.ClientSession, file_path: Path):
+            nonlocal completed_count
             async with semaphore:
-                return await self.upload_file(session, file_path)
-
-        async with aiohttp.ClientSession(timeout=self.timeout) as session:
-            tasks = [bounded_upload(session, fp) for fp in file_paths]
-
-            # Use tqdm for progress bar
-            results = []
-            for coro in tqdm.as_completed(
-                tasks, total=len(tasks), desc="Uploading", unit="file"
-            ):
-                result = await coro
-                results.append(result)
+                result = await self.upload_file(session, file_path)
+                completed_count += 1
+                pbar.update(1)
 
                 # Save state periodically (every 10 uploads)
-                if len(results) % 10 == 0:
+                if completed_count % 10 == 0:
                     self.save_state()
+
+                return result
+
+        # Create progress bar
+        with tqdm(total=len(file_paths), desc="Uploading", unit="file") as pbar:
+            async with aiohttp.ClientSession(timeout=self.timeout) as session:
+                tasks = [bounded_upload(session, fp) for fp in file_paths]
+                # Run all tasks concurrently
+                results = await asyncio.gather(*tasks, return_exceptions=True)
 
         # Final state save
         self.save_state()
@@ -228,7 +237,6 @@ class BatchUploader:
             logger.warning("DRY RUN MODE - No files will actually be uploaded")
             logger.warning("Use --execute flag to perform actual uploads")
             logger.info("*" * 60)
-            return
         else:
             logger.info("!" * 60)
             logger.warning("EXECUTION MODE - Files will be uploaded to the server")
@@ -244,6 +252,8 @@ class BatchUploader:
             except (KeyboardInterrupt, EOFError):
                 logger.info("\nUpload cancelled by user.")
                 return
+
+        logger.info("")  # Empty line before progress
 
         # Start upload
         await self.upload_batch(files_to_upload)
@@ -359,4 +369,5 @@ Examples:
 
 
 if __name__ == "__main__":
+    main()
     main()
