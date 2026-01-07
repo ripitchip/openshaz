@@ -25,8 +25,8 @@ class BatchUploader:
     def __init__(
         self,
         api_url: str = "http://localhost:8000",
-        max_concurrent: int = 5,
-        timeout: int = 120,
+        max_concurrent: int = 10,
+        timeout: int = 30,
         state_file: str = ".upload_state.json",
         dry_run: bool = True,
         limit: int = 30,
@@ -34,8 +34,8 @@ class BatchUploader:
         """Initialize batch uploader.
 
         :param api_url: Base URL of the OpenShaz API
-        :param max_concurrent: Maximum number of concurrent uploads
-        :param timeout: Timeout per upload in seconds
+        :param max_concurrent: Maximum number of concurrent uploads (default 10)
+        :param timeout: Timeout per upload in seconds (API returns immediately now)
         :param state_file: File to track upload progress
         :param dry_run: If True, only simulate uploads without sending
         :param limit: Maximum number of files to upload (0 for unlimited)
@@ -137,28 +137,37 @@ class BatchUploader:
 
         :param file_paths: List of file paths to upload
         """
-        semaphore = asyncio.Semaphore(self.max_concurrent)
-        completed_count = 0
+        # Create connector with higher connection limit for true parallelism
+        connector = aiohttp.TCPConnector(
+            limit=self.max_concurrent,
+            limit_per_host=self.max_concurrent,
+            force_close=False,
+        )
 
-        async def bounded_upload(session: aiohttp.ClientSession, file_path: Path):
-            nonlocal completed_count
-            async with semaphore:
-                result = await self.upload_file(session, file_path)
-                completed_count += 1
-                pbar.update(1)
+        async with aiohttp.ClientSession(
+            timeout=self.timeout, connector=connector
+        ) as session:
+            semaphore = asyncio.Semaphore(self.max_concurrent)
+            pbar = tqdm(total=len(file_paths), desc="Uploading", unit="file")
+            completed = 0
 
-                # Save state periodically (every 10 uploads)
-                if completed_count % 10 == 0:
-                    self.save_state()
+            async def upload_with_progress(file_path: Path):
+                nonlocal completed
+                async with semaphore:
+                    result = await self.upload_file(session, file_path)
+                    completed += 1
+                    pbar.update(1)
+                    if completed % 10 == 0:
+                        self.save_state()
+                    return result
 
-                return result
+            # Create actual Task objects that start immediately
+            tasks = [asyncio.create_task(upload_with_progress(fp)) for fp in file_paths]
 
-        # Create progress bar
-        with tqdm(total=len(file_paths), desc="Uploading", unit="file") as pbar:
-            async with aiohttp.ClientSession(timeout=self.timeout) as session:
-                tasks = [bounded_upload(session, fp) for fp in file_paths]
-                # Run all tasks concurrently
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+            # Wait for all tasks to complete (they run in parallel)
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+            pbar.close()
 
         # Final state save
         self.save_state()
@@ -322,15 +331,15 @@ Examples:
     parser.add_argument(
         "--max-concurrent",
         type=int,
-        default=5,
-        help="Maximum number of concurrent uploads (default: 5)",
+        default=10,
+        help="Maximum number of concurrent uploads (default: 10)",
     )
 
     parser.add_argument(
         "--timeout",
         type=int,
-        default=120,
-        help="Timeout per upload in seconds (default: 120)",
+        default=30,
+        help="Timeout per upload in seconds (default: 30, API returns immediately)",
     )
 
     parser.add_argument(
@@ -358,7 +367,9 @@ Examples:
     try:
         asyncio.run(uploader.run(args.directory))
         elapsed_time = time.time() - start_time
-        logger.info(f"Execution completed in {elapsed_time:.2f} seconds.")
+        logger.info(
+            f"Execution completed in {elapsed_time:.2f} seconds. For a mean time per file of {elapsed_time / max(1, len(uploader.successful) + len(uploader.failed)):.2f} seconds."
+        )
     except KeyboardInterrupt:
         logger.info("\n\nUpload interrupted by user")
         uploader.save_state()
@@ -369,5 +380,4 @@ Examples:
 
 
 if __name__ == "__main__":
-    main()
     main()

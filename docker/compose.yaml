@@ -31,7 +31,7 @@ services:
       "--wipe-storage",
       "--debug"]
     deploy:
-      replicas: 7
+      replicas: 10
     environment:
       RABBITMQ_URL: ${RABBITMQ_URL}
       OBJECT_STORAGE_URL: ${OBJECT_STORAGE_URL}

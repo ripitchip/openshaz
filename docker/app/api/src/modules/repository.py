@@ -155,6 +155,33 @@ def _rpc_call(
     return response
 
 
+def _fire_and_forget(queue_name: str, payload: Dict[str, Any]) -> str:
+    """Send a message without waiting for response (async job submission).
+
+    :param queue_name: Target queue name
+    :param payload: Message payload
+    :return: Job ID for tracking
+    """
+    connection = pika.BlockingConnection(pika.URLParameters(RABBITMQ_URL))
+    channel = connection.channel()
+    channel.queue_declare(queue=queue_name, durable=True)
+
+    job_id = payload.get("job_id", str(uuid.uuid4()))
+
+    channel.basic_publish(
+        exchange="",
+        routing_key=queue_name,
+        properties=pika.BasicProperties(
+            delivery_mode=2,  # Persistent
+        ),
+        body=json.dumps(payload),
+    )
+
+    connection.close()
+    logger.info(f"Job {job_id} queued to {queue_name}")
+    return job_id
+
+
 def send_extraction_task(
     music_name: str, bucket_url: str, timeout: int = 300
 ) -> Dict[str, Any]:
@@ -166,6 +193,24 @@ def send_extraction_task(
         "bucket_url": bucket_url,
     }
     return _rpc_call(EXTRACTION_QUEUE, payload, timeout=timeout)
+
+
+def send_extraction_task_async(music_name: str, bucket_url: str) -> Dict[str, Any]:
+    """Send extraction task without waiting for completion (fire-and-forget).
+
+    :param music_name: Name of the music file
+    :param bucket_url: URL in object storage
+    :return: Dict with job_id for tracking
+    """
+    job_id = str(uuid.uuid4())
+    payload = {
+        "job_id": job_id,
+        "type": "extraction",
+        "music_name": music_name,
+        "bucket_url": bucket_url,
+    }
+    _fire_and_forget(EXTRACTION_QUEUE, payload)
+    return {"job_id": job_id, "status": "queued", "music_name": music_name}
 
 
 def send_similarity_task(

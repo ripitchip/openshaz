@@ -6,6 +6,7 @@ from modules.repository import (
     OPENSOURCE_BUCKET,
     QUERY_BUCKET,
     send_extraction_task,
+    send_extraction_task_async,
     send_similarity_task,
     upload_to_object_storage,
 )
@@ -33,17 +34,31 @@ async def readiness_check():
 
 
 @app.post("/add-song")
-async def add_song(file: UploadFile = File(...)):
-    """Upload a song to opensource bucket, extract features, and store in DB."""
+async def add_song(file: UploadFile = File(...), wait: bool = False):
+    """Upload a song to opensource bucket, extract features, and store in DB.
+
+    Args:
+        file: Audio file to upload
+        wait: If True, wait for extraction to complete (slow). If False, return immediately.
+    """
     try:
         bucket_url = upload_to_object_storage(
             file_obj=file.file, file_name=file.filename, bucket_name=OPENSOURCE_BUCKET
         )
 
-        result = send_extraction_task(music_name=file.filename, bucket_url=bucket_url)
+        if wait:
+            # Synchronous: wait for worker to complete (slow)
+            result = send_extraction_task(
+                music_name=file.filename, bucket_url=bucket_url
+            )
+        else:
+            # Async: fire-and-forget, return immediately (fast for batch)
+            result = send_extraction_task_async(
+                music_name=file.filename, bucket_url=bucket_url
+            )
 
         return {
-            "status": "success",
+            "status": "success" if wait else "queued",
             "music_name": file.filename,
             "bucket_url": bucket_url,
             "result": result,
