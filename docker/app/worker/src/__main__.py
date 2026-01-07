@@ -14,16 +14,22 @@ from modules.database import (
     init_database,
     store_opensource_song,
     store_query_song,
+    wipe_all_tables,
 )
 from modules.dataset import create_dataframe
 from modules.extraction import get_features
 from modules.parser import parse_arguments
 from modules.similarity import compare_different_metrics, measure_similarity
-from modules.storage import check_connection as check_storage_connection
-from modules.storage import (cleanup_downloaded_file,
-                             download_from_object_storage)
+from modules.storage import (
+    check_connection as check_storage_connection,
+    wipe_all_buckets,
+)
+from modules.storage import cleanup_downloaded_file, download_from_object_storage
 
 RABBITMQ_URL = os.getenv("RABBITMQ_URL", "amqp://guest:guest@rabbitmq:5672/")
+EXTRACTION_BUCKET_NAME = os.getenv("EXTRACTION_BUCKET_NAME", "opensource-songs")
+SIMILARITY_BUCKET_NAME = os.getenv("SIMILARITY_BUCKET_NAME", "query-songs")
+
 MAX_JOB_RETRIES = 3  # Maximum number of times a job can be requeued
 
 
@@ -369,6 +375,11 @@ def main():
                         connection.close()
                     return
                 time.sleep(wait_seconds_before_retry)
+
+        if args.wipe_database:
+            wipe_all_tables()
+        if args.wipe_storage:
+            wipe_all_buckets()
 
         extraction_queue_name = "audio_extraction_tasks"
         similarity_queue_name = "audio_similarity_tasks"

@@ -14,6 +14,9 @@ OBJECT_STORAGE_ACCESS_KEY = os.getenv("OBJECT_STORAGE_ACCESS_KEY")
 OBJECT_STORAGE_SECRET_KEY = os.getenv("OBJECT_STORAGE_SECRET_KEY")
 OBJECT_STORAGE_REGION = os.getenv("OBJECT_STORAGE_REGION", "eu-west-1")
 
+EXTRACTION_BUCKET_NAME = os.getenv("EXTRACTION_BUCKET_NAME", "opensource-songs")
+SIMILARITY_BUCKET_NAME = os.getenv("SIMILARITY_BUCKET_NAME", "query-songs")
+
 
 def check_connection() -> bool:
     """Check if object storage is accessible.
@@ -190,22 +193,20 @@ def wipe_bucket(bucket_name: str) -> int:
         raise
 
 
-def wipe_all_buckets(extraction_bucket: str, similarity_bucket: str) -> dict:
+def wipe_all_buckets() -> dict:
     """Delete all objects from both buckets.
 
-    :param extraction_bucket: Name of the extraction bucket
-    :param similarity_bucket: Name of the similarity bucket
     :return: Dictionary with counts for each bucket
     """
-    extraction_count = wipe_bucket(extraction_bucket)
-    similarity_count = wipe_bucket(similarity_bucket)
+    extraction_count = wipe_bucket(EXTRACTION_BUCKET_NAME)
+    similarity_count = wipe_bucket(SIMILARITY_BUCKET_NAME)
 
     logger.warning(
-        f"Wiped all buckets: {extraction_count} from {extraction_bucket}, "
-        f"{similarity_count} from {similarity_bucket}"
+        f"Wiped all buckets: {extraction_count} from {EXTRACTION_BUCKET_NAME}, "
+        f"{similarity_count} from {SIMILARITY_BUCKET_NAME}"
     )
 
     return {
-        extraction_bucket: extraction_count,
-        similarity_bucket: similarity_count,
+        EXTRACTION_BUCKET_NAME: extraction_count,
+        SIMILARITY_BUCKET_NAME: similarity_count,
     }

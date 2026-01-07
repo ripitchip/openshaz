@@ -75,6 +75,12 @@ def parse_arguments() -> argparse.Namespace:
     worker_parser.add_argument(
         "--debug", action="store_true", help="Run with debug console"
     )
+    worker_parser.add_argument(
+        "--wipe-database", action="store_true", help="Wipe all database tables"
+    )
+    worker_parser.add_argument(
+        "--wipe-storage", action="store_true", help="Wipe all object storage buckets"
+    )
 
     args = parser.parse_args()
 

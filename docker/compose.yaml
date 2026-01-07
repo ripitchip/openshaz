@@ -23,6 +23,13 @@ services:
 
   worker:
     build: ./app/worker
+    command: [
+      "python",
+      "src", 
+      "worker", 
+      # "--wipe-database", 
+      # "--wipe-storage",
+      "--debug"]
     deploy:
       replicas: 1
     environment:
