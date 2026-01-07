@@ -156,7 +156,7 @@ def _rpc_call(
 
 
 def send_extraction_task(
-    music_name: str, bucket_url: str, timeout: int = 45
+    music_name: str, bucket_url: str, timeout: int = 300
 ) -> Dict[str, Any]:
     """Send extraction task with object storage URL."""
     payload = {

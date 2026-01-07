@@ -27,11 +27,11 @@ services:
       "python",
       "src", 
       "worker", 
-      # "--wipe-database", 
-      # "--wipe-storage",
+      "--wipe-database", 
+      "--wipe-storage",
       "--debug"]
     deploy:
-      replicas: 1
+      replicas: 7
     environment:
       RABBITMQ_URL: ${RABBITMQ_URL}
       OBJECT_STORAGE_URL: ${OBJECT_STORAGE_URL}
@@ -83,58 +83,58 @@ services:
   # ------------------------------------------------------
   # INFRASTRUCTURE (Storage & Messaging)
   # ------------------------------------------------------
-  rustfs:
-    image: rustfs/rustfs:latest
-    restart: unless-stopped
-    volumes:
-      - rustfs-data:/data
-      - rustfs-logs:/app/logs
-    environment:
-      RUSTFS_VOLUMES: ${RUSTFS_VOLUMES}
-      RUSTFS_ADDRESS: ${RUSTFS_ADDRESS}
-      RUSTFS_CONSOLE_ADDRESS: ${RUSTFS_CONSOLE_ADDRESS}
-      RUSTFS_CONSOLE_ENABLE: ${RUSTFS_CONSOLE_ENABLE}
-      RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
-      RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
-      RUSTFS_CORS_ALLOWED_ORIGINS: ${RUSTFS_CORS_ALLOWED_ORIGINS}
-      RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS: ${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS}
-    ports:
-      - "9000:9000"
-      - "9001:9001"
-    healthcheck:
-      test: ["CMD", "sh", "-c", "curl -f http://localhost:9000/health && curl -f http://localhost:9001/rustfs/console/health"]
-      interval: 30s
-      timeout: 10s
-      retries: 3
-      start_period: 40s
-    deploy:
-      resources:
-        limits:
-          cpus: "2.0"
-          memory: 4GB
-    networks:
-      - internal
+  # rustfs:
+  #   image: rustfs/rustfs:latest
+  #   restart: unless-stopped
+  #   volumes:
+  #     - rustfs-data:/data
+  #     - rustfs-logs:/app/logs
+  #   environment:
+  #     RUSTFS_VOLUMES: ${RUSTFS_VOLUMES}
+  #     RUSTFS_ADDRESS: ${RUSTFS_ADDRESS}
+  #     RUSTFS_CONSOLE_ADDRESS: ${RUSTFS_CONSOLE_ADDRESS}
+  #     RUSTFS_CONSOLE_ENABLE: ${RUSTFS_CONSOLE_ENABLE}
+  #     RUSTFS_ACCESS_KEY: ${RUSTFS_ACCESS_KEY}
+  #     RUSTFS_SECRET_KEY: ${RUSTFS_SECRET_KEY}
+  #     RUSTFS_CORS_ALLOWED_ORIGINS: ${RUSTFS_CORS_ALLOWED_ORIGINS}
+  #     RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS: ${RUSTFS_CONSOLE_CORS_ALLOWED_ORIGINS}
+  #   ports:
+  #     - "9000:9000"
+  #     - "9001:9001"
+  #   healthcheck:
+  #     test: ["CMD", "sh", "-c", "curl -f http://localhost:9000/health && curl -f http://localhost:9001/rustfs/console/health"]
+  #     interval: 30s
+  #     timeout: 10s
+  #     retries: 3
+  #     start_period: 40s
+  #   deploy:
+  #     resources:
+  #       limits:
+  #         cpus: "2.0"
+  #         memory: 4GB
+  #   networks:
+  #     - internal
 
-  postgres:
-    build: ./postgres 
-    command:
-      - "postgres"
-      - "-c"
-      - "log_min_duration_statement=0"
-      - "-c"
-      - "log_statement=none"
-      - "-c"
-      - "log_line_prefix=%m "
-    environment:
-      POSTGRES_USER: ${POSTGRES_USER}
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
-      POSTGRES_DB: ${POSTGRES_DB}
-    volumes:
-      - pgdata:/var/lib/postgresql
-    ports:
-      - "5432:5432"
-    networks:
-      - internal
+  # postgres:
+  #   build: ./postgres 
+  #   command:
+  #     - "postgres"
+  #     - "-c"
+  #     - "log_min_duration_statement=0"
+  #     - "-c"
+  #     - "log_statement=none"
+  #     - "-c"
+  #     - "log_line_prefix=%m "
+  #   environment:
+  #     POSTGRES_USER: ${POSTGRES_USER}
+  #     POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+  #     POSTGRES_DB: ${POSTGRES_DB}
+  #   volumes:
+  #     - pgdata:/var/lib/postgresql
+  #   ports:
+  #     - "5432:5432"
+  #   networks:
+  #     - internal
 
   rabbitmq:
     image: rabbitmq:3-management
