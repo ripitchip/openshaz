@@ -229,3 +229,42 @@ def health_check() -> bool:
     except Exception as e:
         logger.error(f"Database health check failed: {e}")
         return False
+
+
+def wipe_opensource_songs() -> int:
+    """Delete all records from opensource_songs table.
+
+    :return: Number of records deleted
+    """
+    with get_db_session() as session:
+        count = session.query(OpensourceSong).count()
+        session.query(OpensourceSong).delete()
+        session.commit()
+        logger.warning(f"Wiped {count} records from opensource_songs table")
+        return count
+
+
+def wipe_query_songs() -> int:
+    """Delete all records from query_songs table.
+
+    :return: Number of records deleted
+    """
+    with get_db_session() as session:
+        count = session.query(QuerySong).count()
+        session.query(QuerySong).delete()
+        session.commit()
+        logger.warning(f"Wiped {count} records from query_songs table")
+        return count
+
+
+def wipe_all_tables() -> Dict[str, int]:
+    """Delete all records from both tables.
+
+    :return: Dictionary with counts for each table
+    """
+    opensource_count = wipe_opensource_songs()
+    query_count = wipe_query_songs()
+    logger.warning(
+        f"Wiped all tables: {opensource_count} opensource, {query_count} query songs"
+    )
+    return {"opensource_songs": opensource_count, "query_songs": query_count}

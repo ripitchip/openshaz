@@ -141,3 +141,71 @@ def cleanup_downloaded_file(file_path: Path) -> None:
     except Exception as e:
         logger.error(f"Failed to cleanup file {file_path}: {e}")
         raise
+
+
+def _get_s3_client():
+    """Create and return an S3 client."""
+    if not OBJECT_STORAGE_ACCESS_KEY or not OBJECT_STORAGE_SECRET_KEY:
+        raise ValueError(
+            "OBJECT_STORAGE_ACCESS_KEY and OBJECT_STORAGE_SECRET_KEY must be set"
+        )
+
+    return boto3.client(
+        "s3",
+        endpoint_url=OBJECT_STORAGE_URL,
+        aws_access_key_id=OBJECT_STORAGE_ACCESS_KEY,
+        aws_secret_access_key=OBJECT_STORAGE_SECRET_KEY,
+        config=Config(signature_version="s3v4", connect_timeout=30, read_timeout=30),
+        region_name=OBJECT_STORAGE_REGION,
+    )
+
+
+def wipe_bucket(bucket_name: str) -> int:
+    """Delete all objects from a bucket.
+
+    :param bucket_name: Name of the bucket to wipe
+    :return: Number of objects deleted
+    """
+    s3_client = _get_s3_client()
+
+    try:
+        response = s3_client.list_objects_v2(Bucket=bucket_name)
+
+        if "Contents" not in response:
+            logger.info(f"Bucket {bucket_name} is already empty")
+            return 0
+
+        objects_to_delete = [{"Key": obj["Key"]} for obj in response["Contents"]]
+        count = len(objects_to_delete)
+
+        if objects_to_delete:
+            s3_client.delete_objects(
+                Bucket=bucket_name, Delete={"Objects": objects_to_delete}
+            )
+            logger.warning(f"Wiped {count} objects from bucket: {bucket_name}")
+
+        return count
+    except ClientError as e:
+        logger.error(f"Failed to wipe bucket {bucket_name}: {e}")
+        raise
+
+
+def wipe_all_buckets(extraction_bucket: str, similarity_bucket: str) -> dict:
+    """Delete all objects from both buckets.
+
+    :param extraction_bucket: Name of the extraction bucket
+    :param similarity_bucket: Name of the similarity bucket
+    :return: Dictionary with counts for each bucket
+    """
+    extraction_count = wipe_bucket(extraction_bucket)
+    similarity_count = wipe_bucket(similarity_bucket)
+
+    logger.warning(
+        f"Wiped all buckets: {extraction_count} from {extraction_bucket}, "
+        f"{similarity_count} from {similarity_bucket}"
+    )
+
+    return {
+        extraction_bucket: extraction_count,
+        similarity_bucket: similarity_count,
+    }
