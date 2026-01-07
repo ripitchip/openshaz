@@ -112,6 +112,14 @@ services:
 
   postgres:
     build: ./postgres 
+    command:
+      - "postgres"
+      - "-c"
+      - "log_min_duration_statement=0"
+      - "-c"
+      - "log_statement=none"
+      - "-c"
+      - "log_line_prefix=%m "
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
