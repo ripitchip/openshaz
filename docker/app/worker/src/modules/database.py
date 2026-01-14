@@ -111,6 +111,36 @@ def store_opensource_song(
         return song
 
 
+def get_latest_id_query_song() -> int:
+    """Get the highest song ID in the query_songs table.
+
+    :return: Highest song ID or None if table is empty
+    """
+    with get_db_session() as session:
+        result = session.execute(
+            select(QuerySong.id).order_by(QuerySong.id.desc()).limit(1)
+        ).scalar_one_or_none()
+        return result if result is not None else 0
+
+
+def get_new_id_query_song() -> int:
+    """Get a new unique song ID for query_songs table.
+
+    :return: New unique song ID
+    """
+    latest_id = get_latest_id_query_song()
+    result = latest_id + 1
+    # Check if ID already exists (should not happen, but just in case)
+    with get_db_session() as session:
+        existing = session.query(QuerySong).filter_by(id=result).first()
+        if existing:
+            logger.warning(
+                f"ID collision detected for query song ID {result}, incrementing"
+            )
+            result += 1
+    return result
+
+
 def store_query_song(
     name: str, bucket_url: str, features: List[float], song_id: Optional[int] = None
 ) -> QuerySong:
@@ -124,9 +154,7 @@ def store_query_song(
     :raises IntegrityError: If song with same ID already exists
     """
     if song_id is None:
-        song_id = extract_id_from_filename(name)
-        if song_id is None:
-            raise ValueError(f"Could not extract ID from filename: {name}")
+        song_id = get_new_id_query_song()
 
     with get_db_session() as session:
         # Check if song already exists
