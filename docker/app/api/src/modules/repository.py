@@ -107,6 +107,24 @@ def delete_from_object_storage(file_name: str, bucket_name: str) -> None:
         raise
 
 
+def download_from_object_storage(file_name: str, bucket_name: str) -> bytes:
+    """Download a file from object storage.
+
+    :param file_name: Name of the file to download
+    :param bucket_name: Bucket containing the file
+    :return: File contents as bytes
+    """
+    s3_client = _get_s3_client()
+    
+    try:
+        logger.info(f"Downloading {file_name} from bucket {bucket_name}")
+        response = s3_client.get_object(Bucket=bucket_name, Key=file_name)
+        return response['Body'].read()
+    except ClientError as e:
+        logger.error(f"Failed to download from object storage: {e}")
+        raise
+
+
 def _rpc_call(
     queue_name: str, payload: Dict[str, Any], timeout: int = 30
 ) -> Dict[str, Any]:

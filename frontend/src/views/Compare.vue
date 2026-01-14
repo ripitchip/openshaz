@@ -11,6 +11,8 @@ const selectedFile = ref<File | null>(null)
 const isAnalyzing = ref(false)
 const errorMessage = ref('')
 const similarSongs = ref<any[]>([])
+const currentlyPlaying = ref<string | null>(null)
+const audioElement = ref<HTMLAudioElement | null>(null)
 
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
@@ -51,6 +53,41 @@ const handleGetSimilar = async () => {
   } finally {
     isAnalyzing.value = false
   }
+}
+
+const playAudio = (filename: string) => {
+  if (currentlyPlaying.value === filename) {
+    // Pause if already playing
+    audioElement.value?.pause()
+    currentlyPlaying.value = null
+  } else {
+    // Stop current audio if any
+    if (audioElement.value) {
+      audioElement.value.pause()
+    }
+    
+    // Create new audio element
+    const audio = new Audio(`${backendUrl.value}/get-song/${encodeURIComponent(filename)}`)
+    audioElement.value = audio
+    currentlyPlaying.value = filename
+    
+    audio.play().catch(err => {
+      console.error('Failed to play audio:', err)
+      errorMessage.value = 'Failed to play audio'
+      currentlyPlaying.value = null
+    })
+    
+    audio.onended = () => {
+      currentlyPlaying.value = null
+    }
+  }
+}
+
+const downloadAudio = (filename: string) => {
+  const link = document.createElement('a')
+  link.href = `${backendUrl.value}/get-song/${encodeURIComponent(filename)}`
+  link.download = filename
+  link.click()
 }
 </script>
 
@@ -123,6 +160,25 @@ const handleGetSimilar = async () => {
                 <span class="text-sm font-semibold">Genre</span>
                 <Badge variant="secondary">{{ song.genre }}</Badge>
               </div>
+              <div class="flex gap-2 mt-4">
+                <Button 
+                  @click="playAudio(song.name || song.title || song.filename)"
+                  class="flex-1"
+                  :class="currentlyPlaying === (song.name || song.title || song.filename) ? 'bg-linear-to-br! from-blue-400! to-blue-600! text-white! font-semibold' : 'bg-transparent! text-black! hover:bg-gray-100!'"
+                  size="sm"
+                >
+                  <span class="mr-1">{{ currentlyPlaying === (song.name || song.title || song.filename) ? '⏸' : '▶' }}</span>
+                  {{ currentlyPlaying === (song.name || song.title || song.filename) ? 'Pause' : 'Play' }}
+                </Button>
+                <Button 
+                  @click="downloadAudio(song.name || song.title || song.filename)"
+                  class="w-10 h-10 p-0 rounded-full bg-transparent! border-2! border-blue-600! text-blue-600! hover:bg-blue-50! flex items-center justify-center"
+                  size="sm"
+                  title="Download"
+                >
+                  <span>⬇</span>
+                </Button>
+              </div>
             </div>
           </CardContent>
         </Card>
@@ -146,12 +202,33 @@ const handleGetSimilar = async () => {
           </CardHeader>
           <CardContent>
             <div class="space-y-2">
-              <div v-for="(song, idx) in entry.results" :key="idx" class="flex items-center justify-between border-b last:border-b-0 pb-2">
-                <div>
-                  <p class="text-sm font-semibold text-gray-900">{{ song.title || song.name || 'Unknown' }}</p>
-                  <p class="text-xs text-gray-600">{{ song.artist || 'Unknown Artist' }}</p>
+              <div v-for="(song, idx) in entry.results" :key="idx" class="space-y-2 border-b last:border-b-0 pb-3 last:pb-0">
+                <div class="flex items-center justify-between">
+                  <div>
+                    <p class="text-sm font-semibold text-gray-900">{{ song.title || song.name || 'Unknown' }}</p>
+                    <p class="text-xs text-gray-600">{{ song.artist || 'Unknown Artist' }}</p>
+                  </div>
+                  <Badge v-if="song.similarity" class="bg-blue-600">{{ Math.round(song.similarity * 100) }}%</Badge>
                 </div>
-                <Badge v-if="song.similarity" class="bg-blue-600">{{ Math.round(song.similarity * 100) }}%</Badge>
+                <div class="flex gap-2">
+                  <Button 
+                    @click="playAudio(song.name || song.title || song.filename)"
+                    class="flex-1"
+                    :class="currentlyPlaying === (song.name || song.title || song.filename) ? 'bg-linear-to-br! from-blue-400! to-blue-600! text-white! font-semibold' : 'bg-transparent! text-black! hover:bg-gray-100!'"
+                    size="sm"
+                  >
+                    <span class="mr-1">{{ currentlyPlaying === (song.name || song.title || song.filename) ? '⏸' : '▶' }}</span>
+                    {{ currentlyPlaying === (song.name || song.title || song.filename) ? 'Pause' : 'Play' }}
+                  </Button>
+                  <Button 
+                    @click="downloadAudio(song.name || song.title || song.filename)"
+                    class="w-10 h-10 p-0 rounded-full bg-transparent! border-2! border-blue-600! text-blue-600! hover:bg-blue-50! flex items-center justify-center"
+                    size="sm"
+                    title="Download"
+                  >
+                    <span>⬇</span>
+                  </Button>
+                </div>
               </div>
               <p v-if="!entry.results || entry.results.length === 0" class="text-sm text-gray-500">No results stored.</p>
             </div>

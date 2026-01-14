@@ -2,9 +2,11 @@ import os
 
 import uvicorn
 from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi.responses import StreamingResponse
 from modules.repository import (
     OPENSOURCE_BUCKET,
     QUERY_BUCKET,
+    download_from_object_storage,
     send_extraction_task,
     send_extraction_task_async,
     send_similarity_task,
@@ -113,6 +115,30 @@ async def get_similar_songs(file: UploadFile = File(...), top_k: int = 5):
         raise HTTPException(status_code=504, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.get("/get-song/{filename}")
+async def get_song(filename: str):
+    """Download a song file from object storage.
+    
+    Args:
+        filename: Name of the file to download from the opensource bucket
+    """
+    try:
+        file_data = download_from_object_storage(
+            file_name=filename, bucket_name=OPENSOURCE_BUCKET
+        )
+        
+        return StreamingResponse(
+            iter([file_data]),
+            media_type="audio/mpeg",
+            headers={
+                "Content-Disposition": f"inline; filename={filename}",
+                "Accept-Ranges": "bytes",
+            }
+        )
+    except Exception as e:
+        raise HTTPException(status_code=404, detail=f"File not found: {str(e)}")
 
 
 if __name__ == "__main__":
