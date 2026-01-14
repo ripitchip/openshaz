@@ -13,12 +13,65 @@ const errorMessage = ref('')
 const similarSongs = ref<any[]>([])
 const currentlyPlaying = ref<string | null>(null)
 const audioElement = ref<HTMLAudioElement | null>(null)
+const previewAudio = ref<HTMLAudioElement | null>(null)
+const extractStart = ref<number>(0)
+const extractDuration = ref<number>(30)
+const isPlayingPreview = ref(false)
+const currentPreviewTime = ref<number>(0)
+const totalDuration = ref<number>(0)
+const fileUrl = ref<string>('')
+const waveformCanvas = ref<HTMLCanvasElement | null>(null)
+const waveformData = ref<Uint8Array | null>(null)
+const isDraggingStart = ref(false)
+const isDraggingEnd = ref(false)
+const isDraggingMiddle = ref(false)
+const dragStartOffset = ref<number>(0)
+const currentAudioBuffer = ref<AudioBuffer | null>(null)
 
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
   if (target.files && target.files.length > 0) {
     selectedFile.value = target.files[0] || null
     errorMessage.value = ''
+    
+    // Create URL for preview
+    if (fileUrl.value) {
+      URL.revokeObjectURL(fileUrl.value)
+    }
+    if (selectedFile.value) {
+      fileUrl.value = URL.createObjectURL(selectedFile.value)
+    }
+    
+    // Create audio element for preview
+    const audio = new Audio(fileUrl.value)
+    previewAudio.value = audio
+    
+    audio.onloadedmetadata = () => {
+      totalDuration.value = audio.duration || 0
+      
+      // Decode audio for waveform
+      const audioContext = new AudioContext()
+      selectedFile.value?.arrayBuffer().then(buffer => {
+        audioContext.decodeAudioData(buffer, (audioBuffer: AudioBuffer) => {
+          drawWaveform(audioBuffer)
+        })
+      })
+    }
+    
+    audio.ontimeupdate = () => {
+      currentPreviewTime.value = (audio.currentTime as number) || 0
+      if (waveformData.value) {
+        drawWaveform(previewAudio.value as any)
+      }
+    }
+    
+    audio.onended = () => {
+      isPlayingPreview.value = false
+    }
+    
+    // Reset extract settings
+    extractStart.value = 0
+    extractDuration.value = 30
   }
 }
 
@@ -33,8 +86,19 @@ const handleGetSimilar = async () => {
   similarSongs.value = []
 
   try {
+    // Extract the audio segment using Web Audio API
+    const extractedBlob = await extractAudioSegment(selectedFile.value, extractStart.value, extractDuration.value)
+    
     const formData = new FormData()
-    formData.append('file', selectedFile.value)
+    // Add timestamp to filename to distinguish different segments
+    const fileNameWithoutExt = selectedFile.value.name.replace(/\.[^/.]+$/, '')
+    const fileExt = selectedFile.value.name.substring(selectedFile.value.name.lastIndexOf('.'))
+    const timestampedName = `${fileNameWithoutExt} (${formatTime(extractStart.value)}-${formatTime(extractStart.value + extractDuration.value)})${fileExt}`
+    
+    formData.append('file', extractedBlob, timestampedName)
+    // Also send segment info separately
+    formData.append('segment_start', extractStart.value.toString())
+    formData.append('segment_duration', extractDuration.value.toString())
 
     const response = await fetch(`${backendUrl.value}/get-similar`, {
       method: 'POST',
@@ -53,6 +117,291 @@ const handleGetSimilar = async () => {
   } finally {
     isAnalyzing.value = false
   }
+}
+
+const extractAudioSegment = async (file: File, start: number, duration: number): Promise<Blob> => {
+  const audioContext = new AudioContext()
+  const arrayBuffer = await file.arrayBuffer()
+  const audioBuffer = await audioContext.decodeAudioData(arrayBuffer)
+  
+  const sampleRate = audioBuffer.sampleRate
+  const startSample = Math.floor(start * sampleRate)
+  const durationSamples = Math.floor(duration * sampleRate)
+  const endSample = Math.min(startSample + durationSamples, audioBuffer.length)
+  
+  const numberOfChannels = audioBuffer.numberOfChannels
+  const extractedBuffer = audioContext.createBuffer(numberOfChannels, endSample - startSample, sampleRate)
+  
+  for (let channel = 0; channel < numberOfChannels; channel++) {
+    const channelData = audioBuffer.getChannelData(channel)
+    const extractedData = extractedBuffer.getChannelData(channel)
+    for (let i = 0; i < extractedBuffer.length; i++) {
+      extractedData[i] = channelData[startSample + i] ?? 0
+    }
+  }
+  
+  // Convert to WAV blob
+  const wavBlob = audioBufferToWav(extractedBuffer)
+  return wavBlob
+}
+
+const audioBufferToWav = (buffer: AudioBuffer): Blob => {
+  const length = buffer.length * buffer.numberOfChannels * 2
+  const arrayBuffer = new ArrayBuffer(44 + length)
+  const view = new DataView(arrayBuffer)
+  const channels: Float32Array[] = []
+  let offset = 0
+  let pos = 0
+  
+  // Write WAV header
+  const setUint16 = (data: number) => {
+    view.setUint16(pos, data, true)
+    pos += 2
+  }
+  const setUint32 = (data: number) => {
+    view.setUint32(pos, data, true)
+    pos += 4
+  }
+  
+  // "RIFF" chunk descriptor
+  setUint32(0x46464952)
+  setUint32(36 + length)
+  setUint32(0x45564157)
+  
+  // "fmt " sub-chunk
+  setUint32(0x20746d66)
+  setUint32(16)
+  setUint16(1)
+  setUint16(buffer.numberOfChannels)
+  setUint32(buffer.sampleRate)
+  setUint32(buffer.sampleRate * buffer.numberOfChannels * 2)
+  setUint16(buffer.numberOfChannels * 2)
+  setUint16(16)
+  
+  // "data" sub-chunk
+  setUint32(0x61746164)
+  setUint32(length)
+  
+  // Write audio data
+  for (let i = 0; i < buffer.numberOfChannels; i++) {
+    channels.push(buffer.getChannelData(i))
+  }
+  
+  while (pos < arrayBuffer.byteLength) {
+    for (let i = 0; i < buffer.numberOfChannels; i++) {
+      const channelData = channels[i]
+      if (!channelData) continue
+      let sample = Math.max(-1, Math.min(1, channelData[offset] ?? 0))
+      sample = sample < 0 ? sample * 0x8000 : sample * 0x7FFF
+      view.setInt16(pos, sample, true)
+      pos += 2
+    }
+    offset++
+  }
+  
+  return new Blob([arrayBuffer], { type: 'audio/wav' })
+}
+
+const togglePreview = () => {
+  if (!previewAudio.value) return
+  
+  if (isPlayingPreview.value) {
+    previewAudio.value.pause()
+    isPlayingPreview.value = false
+  } else {
+    previewAudio.value.currentTime = 0
+    previewAudio.value.play()
+    isPlayingPreview.value = true
+  }
+}
+
+const playExtractPreview = () => {
+  if (!previewAudio.value) return
+  
+  previewAudio.value.currentTime = extractStart.value
+  previewAudio.value.play()
+  isPlayingPreview.value = true
+  
+  // Stop after duration
+  setTimeout(() => {
+    if (previewAudio.value && isPlayingPreview.value) {
+      previewAudio.value.pause()
+      isPlayingPreview.value = false
+    }
+  }, extractDuration.value * 1000)
+}
+
+const setStartFromCurrent = () => {
+  if (previewAudio.value) {
+    extractStart.value = Math.floor(previewAudio.value.currentTime ?? 0)
+  }
+}
+
+const formatTime = (seconds: number): string => {
+  const mins = Math.floor(seconds / 60)
+  const secs = Math.floor(seconds % 60)
+  return `${mins}:${secs.toString().padStart(2, '0')}`
+}
+
+const drawWaveform = (audioBuffer: AudioBuffer) => {
+  if (!waveformCanvas.value) return
+  
+  currentAudioBuffer.value = audioBuffer
+  const canvas = waveformCanvas.value
+  const ctx = canvas.getContext('2d')
+  if (!ctx) return
+  
+  // Get audio data
+  const rawData = audioBuffer.getChannelData(0)
+  const samples = Math.floor(rawData.length / 100)
+  const blockSize = Math.floor(rawData.length / samples)
+  const filtered = new Uint8Array(samples)
+  
+  for (let i = 0; i < samples; i++) {
+    let sum = 0
+    for (let j = 0; j < blockSize; j++) {
+      sum += Math.abs(rawData[i * blockSize + j] ?? 0)
+    }
+    filtered[i] = (sum / blockSize) * 256
+  }
+  
+  waveformData.value = filtered
+  
+  // Draw waveform
+  const canvasWidth = canvas.offsetWidth || 400
+  const canvasHeight = canvas.offsetHeight || 128
+  canvas.width = canvasWidth
+  canvas.height = canvasHeight
+  
+  const barWidth = (canvasWidth / samples)
+  const centerY = canvasHeight / 2
+  
+  // Draw background
+  ctx.fillStyle = '#0f172a'
+  ctx.fillRect(0, 0, canvasWidth, canvasHeight)
+  
+  // Draw waveform
+  ctx.fillStyle = '#06b6d4'
+  for (let i = 0; i < samples; i++) {
+    const barHeight = ((filtered[i] ?? 0) / 255) * centerY
+    ctx.fillRect(i * barWidth, centerY - barHeight, barWidth - 1, barHeight * 2)
+  }
+  
+  // Draw playback position
+  const playPos = ((currentPreviewTime.value ?? 0) / (totalDuration.value ?? 1)) * canvasWidth
+  ctx.strokeStyle = '#0ea5e9'
+  ctx.lineWidth = 2
+  ctx.beginPath()
+  ctx.moveTo(playPos, 0)
+  ctx.lineTo(playPos, canvasHeight)
+  ctx.stroke()
+  
+  // Draw extract range
+  const startX = ((extractStart.value ?? 0) / (totalDuration.value ?? 1)) * canvasWidth
+  const endX = (((extractStart.value ?? 0) + (extractDuration.value ?? 30)) / (totalDuration.value ?? 1)) * canvasWidth
+  
+  ctx.fillStyle = 'rgba(34, 197, 94, 0.2)'
+  ctx.fillRect(startX, 0, endX - startX, canvasHeight)
+  
+  // Draw markers
+  ctx.strokeStyle = '#22c55e'
+  ctx.lineWidth = 3
+  ctx.beginPath()
+  ctx.moveTo(startX, 0)
+  ctx.lineTo(startX, canvasHeight)
+  ctx.stroke()
+  
+  ctx.strokeStyle = '#ef4444'
+  ctx.beginPath()
+  ctx.moveTo(endX, 0)
+  ctx.lineTo(endX, canvasHeight)
+  ctx.stroke()
+}
+
+const handleWaveformMouseDown = (e: MouseEvent) => {
+  if (!waveformCanvas.value) return
+  
+  const canvas = waveformCanvas.value
+  const rect = canvas.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const canvasWidth = canvas.width || 400
+  
+  const startX = ((extractStart.value ?? 0) / (totalDuration.value ?? 1)) * canvasWidth
+  const endX = (((extractStart.value ?? 0) + (extractDuration.value ?? 30)) / (totalDuration.value ?? 1)) * canvasWidth
+  
+  // Check if clicking near left marker
+  if (Math.abs(x - startX) < 15) {
+    isDraggingStart.value = true
+    e.preventDefault()
+  } 
+  // Check if clicking near right marker
+  else if (Math.abs(x - endX) < 15) {
+    isDraggingEnd.value = true
+    e.preventDefault()
+  }
+  // Check if clicking in the middle of the selection block
+  else if (x > startX && x < endX) {
+    isDraggingMiddle.value = true
+    dragStartOffset.value = x - startX
+    e.preventDefault()
+  }
+}
+
+const handleWaveformMouseMove = (e: MouseEvent) => {
+  if (!waveformCanvas.value || totalDuration.value === 0) return
+  
+  const canvas = waveformCanvas.value
+  const rect = canvas.getBoundingClientRect()
+  const x = e.clientX - rect.left
+  const canvasWidth = canvas.width || 400
+  const startX = ((extractStart.value ?? 0) / (totalDuration.value ?? 1)) * canvasWidth
+  const endX = (((extractStart.value ?? 0) + (extractDuration.value ?? 30)) / (totalDuration.value ?? 1)) * canvasWidth
+  
+  // Update cursor based on what's under the mouse
+  if (Math.abs(x - startX) < 15 || Math.abs(x - endX) < 15) {
+    canvas.style.cursor = 'col-resize'
+  } else if (x > startX && x < endX) {
+    canvas.style.cursor = 'grab'
+  } else {
+    canvas.style.cursor = 'pointer'
+  }
+  
+  if (!isDraggingStart.value && !isDraggingEnd.value && !isDraggingMiddle.value) return
+  
+  const percent = Math.max(0, Math.min(1, x / canvasWidth))
+  const time = percent * (totalDuration.value ?? 0)
+  
+  if (isDraggingStart.value) {
+    // Expand/reduce from left - don't go past end
+    const newStart = Math.max(0, Math.min(time, extractStart.value + (extractDuration.value ?? 30) - 5))
+    const timeDiff = newStart - (extractStart.value ?? 0)
+    extractStart.value = newStart
+    extractDuration.value = Math.max(5, (extractDuration.value ?? 30) - timeDiff)
+  } else if (isDraggingEnd.value) {
+    // Expand/reduce from right - don't go past start
+    const newEnd = Math.max((extractStart.value ?? 0) + 5, time)
+    const newDuration = newEnd - (extractStart.value ?? 0)
+    extractDuration.value = Math.min(newDuration, (totalDuration.value ?? 0) - (extractStart.value ?? 0))
+  } else if (isDraggingMiddle.value) {
+    // Move the entire selection block
+    const newStart = time - (dragStartOffset.value / canvasWidth) * (totalDuration.value ?? 0)
+    const minStart = 0
+    const maxStart = (totalDuration.value ?? 0) - (extractDuration.value ?? 30)
+    extractStart.value = Math.max(minStart, Math.min(newStart, maxStart))
+  }
+  
+  // Redraw waveform with updated markers
+  if (currentAudioBuffer.value) {
+    drawWaveform(currentAudioBuffer.value)
+  }
+  
+  e.preventDefault()
+}
+
+const handleWaveformMouseUp = () => {
+  isDraggingStart.value = false
+  isDraggingEnd.value = false
+  isDraggingMiddle.value = false
 }
 
 const playAudio = (filename: string) => {
@@ -83,11 +432,32 @@ const playAudio = (filename: string) => {
   }
 }
 
-const downloadAudio = (filename: string) => {
-  const link = document.createElement('a')
-  link.href = `${backendUrl.value}/get-song/${encodeURIComponent(filename)}`
-  link.download = filename
-  link.click()
+const downloadAudio = async (filename: string) => {
+  try {
+    // Fetch the audio file as a blob
+    const response = await fetch(`${backendUrl.value}/get-song/${encodeURIComponent(filename)}`)
+    if (!response.ok) {
+      errorMessage.value = 'Failed to download audio file'
+      return
+    }
+    
+    const blob = await response.blob()
+    
+    // Create a blob URL and trigger download
+    const blobUrl = URL.createObjectURL(blob)
+    const link = document.createElement('a')
+    link.href = blobUrl
+    link.download = filename || 'audio.mp3'
+    document.body.appendChild(link)
+    link.click()
+    document.body.removeChild(link)
+    
+    // Clean up the blob URL
+    URL.revokeObjectURL(blobUrl)
+  } catch (err: any) {
+    console.error('Download failed:', err)
+    errorMessage.value = `Download failed: ${err.message}`
+  }
 }
 </script>
 
@@ -118,6 +488,58 @@ const downloadAudio = (filename: string) => {
             Selected: {{ selectedFile.name }}
           </p>
         </div>
+
+        <div v-if="selectedFile" class="space-y-4 p-4 bg-blue-50 rounded-lg">
+          <div class="flex items-center justify-between">
+            <span class="text-sm font-semibold text-gray-700">Preview Full Audio</span>
+            <span class="text-sm text-gray-600">{{ formatTime(currentPreviewTime) }} / {{ formatTime(totalDuration) }}</span>
+          </div>
+          <div class="flex gap-2">
+            <Button 
+              @click="togglePreview"
+              class="bg-white! text-blue-600! hover:bg-blue-100! border border-blue-200"
+              size="sm"
+            >
+              {{ isPlayingPreview ? '⏸ Pause' : '▶ Play' }}
+            </Button>
+            <Button 
+              @click="setStartFromCurrent"
+              class="bg-white! text-blue-600! hover:bg-blue-100! border border-blue-200"
+              size="sm"
+            >
+              Set Start Here
+            </Button>
+          </div>
+
+          <Separator class="bg-blue-200" />
+
+          <div class="space-y-3">
+            <h4 class="text-sm font-semibold text-gray-700">Select Extract Segment</h4>
+            <p class="text-xs text-gray-600">Drag the green (start) and red (end) markers to select your extract</p>
+            <canvas 
+              ref="waveformCanvas"
+              @mousedown="handleWaveformMouseDown"
+              @mousemove="handleWaveformMouseMove"
+              @mouseup="handleWaveformMouseUp"
+              @mouseleave="handleWaveformMouseUp"
+              class="w-full h-32 bg-slate-900 rounded cursor-pointer border-2 border-blue-400 hover:border-blue-500 transition-colors"
+              style="touch-action: none; user-select: none;"
+            />
+            <div class="flex justify-between text-xs text-gray-600">
+              <span>Start: {{ formatTime(extractStart) }}</span>
+              <span>Duration: {{ formatTime(extractDuration) }}</span>
+              <span>End: {{ formatTime(extractStart + extractDuration) }}</span>
+            </div>
+            <Button 
+              @click="playExtractPreview"
+              class="w-full bg-blue-600! text-white! hover:bg-blue-700!"
+              size="sm"
+            >
+              🎧 Preview Extract
+            </Button>
+          </div>
+        </div>
+
         <div v-if="errorMessage" class="p-4 bg-red-50 border border-red-200 rounded-lg">
           <p class="text-red-600">{{ errorMessage }}</p>
         </div>
