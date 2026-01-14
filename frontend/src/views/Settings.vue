@@ -44,14 +44,14 @@ const handleTest = async () => {
           <Button 
             @click="handleSave"
             variant="ghost"
-            class="!bg-white !text-blue-700 !border !border-blue-200 hover:!bg-blue-50 hover:!text-blue-800 active:!bg-blue-100 active:scale-[0.99] shadow-sm"
+            class="bg-white! text-blue-700! border! border-blue-200! hover:bg-blue-50! hover:text-blue-800! active:bg-blue-100! active:scale-[0.99] shadow-sm"
           >
             Save
           </Button>
           <Button 
             @click="handleTest"
             variant="outline"
-            class="!bg-white !border !border-green-400 !text-green-700 hover:!bg-green-50 hover:!text-green-800 active:!bg-green-100 active:scale-[0.99]"
+            class="bg-white! border! border-green-400! text-green-700! hover:bg-green-50! hover:text-green-800! active:bg-green-100! active:scale-[0.99]"
           >
             Test Connection
           </Button>

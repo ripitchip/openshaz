@@ -87,7 +87,7 @@ const handleGetSimilar = async () => {
         <Button 
           @click="handleGetSimilar" 
           :disabled="!selectedFile || isAnalyzing"
-          class="w-full h-14 text-lg bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white disabled:opacity-50"
+          class="w-full h-14 text-lg bg-linear-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white disabled:opacity-50"
         >
           <span class="mr-2">{{ isAnalyzing ? '⏳' : '🔍' }}</span> 
           {{ isAnalyzing ? 'Analyzing...' : 'Find Similar Tracks' }}
@@ -106,7 +106,7 @@ const handleGetSimilar = async () => {
           :key="index"
           class="bg-white shadow-xl"
         >
-          <div class="aspect-square bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center">
+          <div class="aspect-square bg-linear-to-br from-blue-400 to-purple-500 flex items-center justify-center">
             <span class="text-6xl">🎵</span>
           </div>
           <CardHeader>

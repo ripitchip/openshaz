@@ -19,7 +19,7 @@ import { musicList, selectedMusic, toggleSelection } from '@/store/music'
         @click="toggleSelection(music.id)"
         :class="{ 'ring-4 ring-blue-500 shadow-2xl': selectedMusic.includes(music.id) }"
       >
-        <div class="aspect-square bg-gradient-to-br from-blue-400 to-purple-500 flex items-center justify-center relative">
+        <div class="aspect-square bg-linear-to-br from-blue-400 to-purple-500 flex items-center justify-center relative">
           <span class="text-6xl group-hover:scale-110 transition-transform">🎵</span>
           <Badge 
             v-if="selectedMusic.includes(music.id)" 

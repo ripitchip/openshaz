@@ -199,7 +199,7 @@ const calculateSimilarity = () => {
           </CardContent>
           <CardFooter>
             <Button @click="addMusic"
-              class="w-full h-14 text-lg bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white">
+              class="w-full h-14 text-lg bg-linear-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white">
               <span class="mr-2">+</span> Add to Library
             </Button>
           </CardFooter>
@@ -363,7 +363,7 @@ const calculateSimilarity = () => {
 
                 <div class="flex gap-3">
                   <Button @click="saveBackendUrl"
-                    class="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white">
+                    class="bg-linear-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white">
                     Save URL
                   </Button>
                   <Button @click="checkHealth" variant="outline" :disabled="isCheckingHealth">

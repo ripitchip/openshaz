@@ -87,7 +87,7 @@ const handleAddMusic = async () => {
         <Button 
           @click="handleAddMusic" 
           :disabled="!selectedFile || isUploading"
-          class="w-full h-14 text-lg bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white disabled:opacity-50"
+          class="w-full h-14 text-lg bg-linear-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white disabled:opacity-50"
         >
           <span class="mr-2">{{ isUploading ? '⏳' : '+' }}</span> 
           {{ isUploading ? 'Uploading...' : 'Add to Library' }}
