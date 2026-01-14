@@ -1,0 +1,425 @@
+<script setup lang="ts">
+import { ref } from 'vue'
+import { Button } from '@/components/ui/button'
+import { Card, CardContent, CardDescription, CardHeader, CardTitle, CardFooter } from '@/components/ui/card'
+import { Input } from '@/components/ui/input'
+import { Badge } from '@/components/ui/badge'
+import { Separator } from '@/components/ui/separator'
+
+interface Music {
+  id: number
+  title: string
+  artist: string
+  genre: string
+  bpm: number
+  key: string
+}
+
+const currentTab = ref('add')
+const backendUrl = ref('http://localhost:8000')
+const healthStatus = ref<'unknown' | 'healthy' | 'error'>('unknown')
+const isCheckingHealth = ref(false)
+
+const checkHealth = async () => {
+  isCheckingHealth.value = true
+  try {
+    const response = await fetch(`${backendUrl.value}/health`)
+    if (response.ok) {
+      healthStatus.value = 'healthy'
+    } else {
+      healthStatus.value = 'error'
+    }
+  } catch (error) {
+    healthStatus.value = 'error'
+  } finally {
+    isCheckingHealth.value = false
+  }
+}
+
+const saveBackendUrl = () => {
+  localStorage.setItem('backendUrl', backendUrl.value)
+  checkHealth()
+}
+
+const loadSettings = () => {
+  const savedUrl = localStorage.getItem('backendUrl')
+  if (savedUrl) {
+    backendUrl.value = savedUrl
+  }
+  checkHealth()
+}
+
+// Load settings on mount
+loadSettings()
+
+const newMusic = ref({
+  title: '',
+  artist: '',
+  genre: '',
+  bpm: 0,
+  key: ''
+})
+
+const musicList = ref<Music[]>([
+  { id: 1, title: 'Sunset Boulevard', artist: 'John Doe', genre: 'Electronic', bpm: 128, key: 'Am' },
+  { id: 2, title: 'Midnight Dreams', artist: 'Jane Smith', genre: 'Ambient', bpm: 95, key: 'Em' },
+  { id: 3, title: 'Electric Pulse', artist: 'The Synths', genre: 'Techno', bpm: 135, key: 'Dm' }
+])
+
+const selectedMusic = ref<number[]>([])
+
+const addMusic = () => {
+  if (newMusic.value.title && newMusic.value.artist) {
+    musicList.value.push({
+      id: Date.now(),
+      ...newMusic.value
+    })
+    newMusic.value = { title: '', artist: '', genre: '', bpm: 0, key: '' }
+    currentTab.value = 'list'
+  }
+}
+
+const toggleSelection = (id: number) => {
+  const index = selectedMusic.value.indexOf(id)
+  if (index > -1) {
+    selectedMusic.value.splice(index, 1)
+  } else {
+    if (selectedMusic.value.length < 2) {
+      selectedMusic.value.push(id)
+    }
+  }
+}
+
+const getSelectedMusicDetails = () => {
+  return selectedMusic.value.map(id => musicList.value.find(m => m.id === id)).filter(Boolean)
+}
+
+const calculateSimilarity = () => {
+  const selected = getSelectedMusicDetails()
+  if (selected.length !== 2) return 0
+
+  const [music1, music2] = selected as Music[]
+
+  // Simple similarity calculation based on BPM and genre
+  const bpmDiff = Math.abs(music1.bpm - music2.bpm)
+  const bpmSimilarity = Math.max(0, 100 - bpmDiff)
+  const genreSimilarity = music1.genre === music2.genre ? 100 : 50
+
+  return Math.round((bpmSimilarity + genreSimilarity) / 2)
+}
+</script>
+
+<template>
+  <div class="h-screen bg-white overflow-auto">
+    <!-- Top Navigation Bar -->
+    <nav class="bg-white shadow-md border-b border-gray-200">
+      <div class="container mx-auto px-6 py-4">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div
+              class="w-12 h-12 bg-linear-to-br from-blue-400 to-blue-600 rounded-2xl flex items-center justify-center shadow-lg">
+              <span class="text-2xl">🎵</span>
+            </div>
+            <h1 class="text-2xl font-bold text-blue-900">OpenShaz</h1>
+          </div>
+          <div class="flex gap-2">
+            <Button @click="currentTab = 'add'" :variant="currentTab === 'add' ? 'default' : 'ghost'" :class="[
+              'transition-all duration-200',
+              currentTab === 'add'
+                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-inner'
+                : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+            ]">
+              Add Music
+            </Button>
+
+            <Button @click="currentTab = 'list'" :variant="currentTab === 'list' ? 'default' : 'ghost'" :class="[
+              'transition-all duration-200',
+              currentTab === 'list'
+                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-inner'
+                : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+            ]">
+              Library
+            </Button>
+
+            <Button @click="currentTab = 'compare'" :variant="currentTab === 'compare' ? 'default' : 'ghost'" :class="[
+              'transition-all duration-200',
+              currentTab === 'compare'
+                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-inner'
+                : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+            ]">
+              Compare
+            </Button>
+
+            <Button @click="currentTab = 'settings'" :variant="currentTab === 'settings' ? 'default' : 'ghost'" :class="[
+              'transition-all duration-200',
+              currentTab === 'settings'
+                ? 'bg-blue-600 hover:bg-blue-700 text-white shadow-inner'
+                : 'text-gray-600 hover:text-blue-600 hover:bg-blue-50'
+            ]">
+              Settings
+            </Button>
+          </div>
+        </div>
+      </div>
+    </nav>
+
+    <div class="container mx-auto px-6 py-8">
+      <!-- Add Music Section -->
+      <div v-if="currentTab === 'add'" class="max-w-2xl mx-auto">
+        <Card class="bg-white shadow-2xl">
+          <CardHeader>
+            <CardTitle class="text-3xl text-blue-900">Add New Track</CardTitle>
+            <CardDescription class="text-gray-600">
+              Add a new song to discover similar tracks
+            </CardDescription>
+          </CardHeader>
+          <CardContent class="space-y-6">
+            <div class="space-y-2">
+              <label class="text-sm font-semibold text-gray-700">Song Title</label>
+              <Input v-model="newMusic.title" placeholder="Enter song title" class="h-12 text-lg" />
+            </div>
+            <div class="space-y-2">
+              <label class="text-sm font-semibold text-gray-700">Artist Name</label>
+              <Input v-model="newMusic.artist" placeholder="Enter artist name" class="h-12 text-lg" />
+            </div>
+            <div class="grid grid-cols-3 gap-4">
+              <div class="space-y-2">
+                <label class="text-sm font-semibold text-gray-700">Genre</label>
+                <Input v-model="newMusic.genre" placeholder="Pop, Rock..." class="h-12" />
+              </div>
+              <div class="space-y-2">
+                <label class="text-sm font-semibold text-gray-700">BPM</label>
+                <Input v-model.number="newMusic.bpm" type="number" placeholder="120" class="h-12" />
+              </div>
+              <div class="space-y-2">
+                <label class="text-sm font-semibold text-gray-700">Key</label>
+                <Input v-model="newMusic.key" placeholder="Am, C#" class="h-12" />
+              </div>
+            </div>
+          </CardContent>
+          <CardFooter>
+            <Button @click="addMusic"
+              class="w-full h-14 text-lg bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white">
+              <span class="mr-2">+</span> Add to Library
+            </Button>
+          </CardFooter>
+        </Card>
+      </div>
+
+      <!-- Music List Section -->
+      <div v-if="currentTab === 'list'">
+        <div class="mb-6">
+          <h2 class="text-3xl font-bold text-blue-900 mb-2">Your Music Library</h2>
+          <p class="text-blue-700">{{ musicList.length }} tracks available</p>
+        </div>
+
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+          <Card v-for="music in musicList" :key="music.id"
+            class="bg-white hover:shadow-2xl transition-all cursor-pointer overflow-hidden group"
+            @click="toggleSelection(music.id)"
+            :class="{ 'ring-4 ring-blue-500 shadow-2xl': selectedMusic.includes(music.id) }">
+            <div
+              class="aspect-square bg-linear-to-br from-blue-400 to-purple-500 flex items-center justify-center relative">
+              <span class="text-6xl group-hover:scale-110 transition-transform">🎵</span>
+              <Badge v-if="selectedMusic.includes(music.id)" class="absolute top-3 right-3 bg-blue-600">
+                ✓ Selected
+              </Badge>
+            </div>
+            <CardHeader class="pb-3">
+              <CardTitle class="text-lg text-gray-900 line-clamp-1">
+                {{ music.title }}
+              </CardTitle>
+              <CardDescription class="text-gray-600">
+                {{ music.artist }}
+              </CardDescription>
+            </CardHeader>
+            <CardContent class="pt-0">
+              <div class="flex flex-wrap gap-2">
+                <Badge variant="secondary" class="text-xs">{{ music.genre }}</Badge>
+                <Badge variant="outline" class="text-xs">{{ music.bpm }} BPM</Badge>
+                <Badge variant="outline" class="text-xs">{{ music.key }}</Badge>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+
+        <div v-if="musicList.length === 0" class="text-center py-20">
+          <div class="text-6xl mb-4">🎵</div>
+          <p class="text-blue-900 text-xl">Your library is empty</p>
+          <p class="text-blue-700 mt-2">Add some tracks to get started</p>
+        </div>
+      </div>
+
+      <!-- Compare Music Section -->
+      <div v-if="currentTab === 'compare'">
+        <div class="max-w-5xl mx-auto">
+          <div class="text-center mb-8">
+            <h2 class="text-3xl font-bold text-blue-900 mb-2">Compare Tracks</h2>
+            <p class="text-blue-700">Select 2 tracks from your library to compare</p>
+          </div>
+
+          <div v-if="selectedMusic.length === 0" class="text-center py-20">
+            <div class="text-6xl mb-4">🎧</div>
+            <p class="text-blue-900 text-xl mb-4">No tracks selected</p>
+            <Button @click="currentTab = 'list'" variant="outline"
+              class="text-blue-900 border-blue-900 hover:bg-blue-900/10">
+              Go to Library
+            </Button>
+          </div>
+
+          <div v-else>
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
+              <Card v-for="music in getSelectedMusicDetails()" :key="music!.id" class="bg-white shadow-xl">
+                <div
+                  class="aspect-video bg-linear-to-br from-blue-400 to-purple-500 flex items-center justify-center">
+                  <span class="text-8xl">🎵</span>
+                </div>
+                <CardHeader>
+                  <CardTitle class="text-2xl text-gray-900">{{ music!.title }}</CardTitle>
+                  <CardDescription class="text-lg text-gray-600">{{ music!.artist }}</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div class="space-y-3 text-gray-700">
+                    <div class="flex justify-between items-center pb-2 border-b">
+                      <span class="font-semibold">Genre</span>
+                      <Badge variant="secondary">{{ music!.genre }}</Badge>
+                    </div>
+                    <div class="flex justify-between items-center pb-2 border-b">
+                      <span class="font-semibold">BPM</span>
+                      <Badge variant="outline">{{ music!.bpm }}</Badge>
+                    </div>
+                    <div class="flex justify-between items-center">
+                      <span class="font-semibold">Key</span>
+                      <Badge variant="outline">{{ music!.key }}</Badge>
+                    </div>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <Separator class="my-8 bg-white/30" />
+
+            <div v-if="selectedMusic.length === 2" class="text-center mb-8">
+              <Card class="inline-block bg-white shadow-2xl">
+                <CardContent class="p-12">
+                  <p class="text-sm text-gray-600 mb-4 uppercase tracking-wider font-semibold">Match Score</p>
+                  <div class="relative inline-block">
+                    <div
+                      class="w-48 h-48 rounded-full bg-linear-to-br from-blue-500 to-purple-600 flex items-center justify-center shadow-2xl">
+                      <div class="w-44 h-44 rounded-full bg-white flex items-center justify-center">
+                        <span
+                          class="text-6xl font-bold bg-linear-to-br from-blue-600 to-purple-600 bg-clip-text text-transparent">
+                          {{ calculateSimilarity() }}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="mt-6">
+                    <Badge
+                      :variant="calculateSimilarity() > 70 ? 'default' : calculateSimilarity() > 40 ? 'secondary' : 'destructive'"
+                      class="text-lg px-6 py-2">
+                      {{ calculateSimilarity() > 70 ? '🔥 Highly Similar' : calculateSimilarity() > 40 ? '👍 Moderately
+                      Similar' : '🎭 Different Styles' }}
+                    </Badge>
+                  </div>
+                </CardContent>
+              </Card>
+            </div>
+
+            <div v-else class="text-center py-12">
+              <p class="text-blue-900 text-xl mb-4">Select one more track from the library</p>
+              <Button @click="currentTab = 'list'" class="bg-blue-600 text-white hover:bg-blue-700 font-semibold">
+                Go to Library
+              </Button>
+            </div>
+
+            <div class="text-center">
+              <Button @click="selectedMusic = []" variant="outline"
+                class="text-blue-900 border-blue-900 hover:bg-blue-900/10">
+                Clear Selection
+              </Button>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Settings Section -->
+      <div v-if="currentTab === 'settings'">
+        <div class="max-w-2xl mx-auto">
+          <Card class="bg-white shadow-2xl">
+            <CardHeader>
+              <CardTitle class="text-3xl text-blue-900">Settings</CardTitle>
+              <CardDescription class="text-gray-600">
+                Configure your backend connection
+              </CardDescription>
+            </CardHeader>
+            <CardContent class="space-y-6">
+              <div class="space-y-4">
+                <div class="space-y-2">
+                  <label class="text-sm font-semibold text-gray-700">Backend URL</label>
+                  <Input v-model="backendUrl" placeholder="http://localhost:8000" class="h-12 text-lg" />
+                  <p class="text-xs text-gray-500">The base URL of your OpenShaz backend server</p>
+                </div>
+
+                <div class="flex gap-3">
+                  <Button @click="saveBackendUrl"
+                    class="bg-gradient-to-r from-blue-600 to-blue-700 hover:from-blue-700 hover:to-blue-800 text-white">
+                    Save URL
+                  </Button>
+                  <Button @click="checkHealth" variant="outline" :disabled="isCheckingHealth">
+                    {{ isCheckingHealth ? 'Checking...' : 'Test Connection' }}
+                  </Button>
+                </div>
+
+                <Separator class="my-4" />
+
+                <div class="space-y-3">
+                  <h3 class="text-lg font-semibold text-gray-900">Connection Status</h3>
+                  <div class="flex items-center gap-3 p-4 rounded-lg" :class="{
+                    'bg-green-50 border border-green-200': healthStatus === 'healthy',
+                    'bg-red-50 border border-red-200': healthStatus === 'error',
+                    'bg-gray-50 border border-gray-200': healthStatus === 'unknown'
+                  }">
+                    <div class="w-3 h-3 rounded-full" :class="{
+                      'bg-green-500 animate-pulse': healthStatus === 'healthy',
+                      'bg-red-500': healthStatus === 'error',
+                      'bg-gray-400': healthStatus === 'unknown'
+                    }"></div>
+                    <span class="font-medium" :class="{
+                      'text-green-700': healthStatus === 'healthy',
+                      'text-red-700': healthStatus === 'error',
+                      'text-gray-700': healthStatus === 'unknown'
+                    }">
+                      {{ healthStatus === 'healthy' ? '✓ Backend is reachable' : healthStatus === 'error' ? '✗ Cannot
+                      connect to backend' : 'Connection not tested yet' }}
+                    </span>
+                  </div>
+                </div>
+
+                <Separator class="my-4" />
+
+                <div class="space-y-3">
+                  <h3 class="text-lg font-semibold text-gray-900">API Endpoints</h3>
+                  <div class="space-y-2 text-sm text-gray-700 bg-gray-50 p-4 rounded-lg font-mono">
+                    <div><span class="text-gray-500">Health:</span> <span class="text-blue-600">{{ backendUrl
+                        }}/health</span></div>
+                    <div><span class="text-gray-500">Add Song:</span> <span class="text-blue-600">{{ backendUrl
+                        }}/add-song</span></div>
+                    <div><span class="text-gray-500">Get Similar:</span> <span class="text-blue-600">{{ backendUrl
+                        }}/get-similar</span></div>
+                  </div>
+                </div>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.container {
+  max-width: 1400px;
+}
+</style>
