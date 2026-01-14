@@ -47,3 +47,30 @@ jobs:
           build-args: |
             VERSION=${{ github.ref_name }}
             BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+      - name: Build and push Frontend
+        uses: docker/build-push-action@v4
+        with:
+          context: frontend
+          file: frontend/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/ripitchip/openshaz-frontend:latest
+            ghcr.io/ripitchip/openshaz-frontend:${{ github.sha }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
+
+
+      - name: Build and push Postgres
+        uses: docker/build-push-action@v4
+        with:
+          context: docker/postgres
+          file: docker/postgres/Dockerfile
+          push: true
+          tags: |
+            ghcr.io/ripitchip/openshaz-postgres:latest
+            ghcr.io/ripitchip/openshaz-postgres:${{ github.sha }}
+          build-args: |
+            VERSION=${{ github.ref_name }}
+            BUILD_DATE=$(date -u +'%Y-%m-%dT%H:%M:%SZ')
