@@ -38,7 +38,9 @@ class SimilarityEngine:
 
         self.df = df.copy()
 
-        feature_columns = [col for col in df.columns if col not in ["id", "name"]]
+        feature_columns = [
+            col for col in df.columns if col not in ["id", "name", "length"]
+        ]
         self.feature_matrix = df[feature_columns].values
 
         if self.normalize:
@@ -86,6 +88,12 @@ class SimilarityEngine:
 
         if not isinstance(query_features, np.ndarray):
             raise ValueError("query_features must be a numpy ndarray")
+
+        if len(query_features) > 0:
+            query_features = query_features[1:]
+            logger.debug(
+                f"Excluded length from query, using {len(query_features)} features"
+            )
 
         similarities = self._compute_similarity(query_features)
 
@@ -266,7 +274,7 @@ def measure_similarity(
     """Measure similarity using the specified metric.
 
     :param df: DataFrame with audio features
-    :param audio: Audio data to compare
+    :param audio: Audio feature vector to compare (length will be excluded automatically)
     :param metric: Similarity metric to use
     :param top_k: Number of top similar results to return
     :return: List of similarity results
