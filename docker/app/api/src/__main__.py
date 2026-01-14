@@ -109,7 +109,7 @@ async def get_similar_songs(file: UploadFile = File(...), top_k: int = 5):
             "bucket_url": bucket_url,
             "top_k": top_k,
             "similar_songs": result.get("similar", []),
-            "result": result,
+            "metadata": result.get("metadata", {}),
         }
     except TimeoutError as e:
         raise HTTPException(status_code=504, detail=str(e))

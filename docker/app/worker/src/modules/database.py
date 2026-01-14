@@ -7,7 +7,7 @@ from typing import Any, Dict, List, Optional
 
 from loguru import logger
 from models.database import Base, OpensourceSong, QuerySong
-from sqlalchemy import create_engine, select
+from sqlalchemy import create_engine, select, text
 from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import QueuePool
@@ -294,3 +294,44 @@ def wipe_all_tables() -> Dict[str, int]:
         f"Wiped all tables: {opensource_count} opensource, {query_count} query songs"
     )
     return {"opensource_songs": opensource_count, "query_songs": query_count}
+
+
+def get_fma_tracks_by_ids(track_ids: List[int]) -> List[Dict[str, Any]]:
+    """Fetch FMA track metadata for given track IDs.
+
+    :param track_ids: List of track IDs to fetch
+    :return: List of dictionaries with track metadata
+    """
+    if not track_ids:
+        return []
+
+    with get_db_session() as session:
+        try:
+            # Use SQLAlchemy text() with proper parameter binding to prevent SQL injection
+            result = session.execute(
+                text(
+                    "SELECT id, title, artist, album, genre, listens, year_created FROM fma_tracks WHERE id = ANY(:ids)"
+                ),
+                {"ids": track_ids},
+            )
+
+            metadata_list = []
+            for row in result:
+                metadata_list.append(
+                    {
+                        "id": row[0],
+                        "title": row[1],
+                        "artist": row[2],
+                        "album": row[3],
+                        "genre": row[4],
+                        "listens": row[5],
+                        "year_created": row[6],
+                    }
+                )
+
+            logger.debug(f"Fetched metadata for {len(metadata_list)} FMA tracks")
+            return metadata_list
+
+        except Exception as e:
+            logger.warning(f"Error fetching FMA track metadata: {e}")
+            return []

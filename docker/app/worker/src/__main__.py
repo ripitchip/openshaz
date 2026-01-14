@@ -13,6 +13,7 @@ from loguru import logger
 from models.audio import audio
 from modules.database import (
     get_all_opensource_songs,
+    get_fma_tracks_by_ids,
     get_query_song_by_name,
     init_database,
     store_opensource_song,
@@ -296,6 +297,20 @@ def process_similarity(ch: Any, method: Any, properties: Any, body: bytes) -> No
             "status": "completed",
             "similar": similar,
         }
+
+        # Fetch FMA metadata for similar songs
+        if similar:
+            similar_ids = [s.get("id") for s in similar if "id" in s]
+            if similar_ids:
+                metadata_list = get_fma_tracks_by_ids(similar_ids)
+                # Create a mapping of id -> metadata for easy lookup
+                metadata_map = {m["id"]: m for m in metadata_list}
+                result["metadata"] = metadata_map
+                logger.info(f"Added metadata for {len(metadata_map)} similar songs")
+            else:
+                result["metadata"] = {}
+        else:
+            result["metadata"] = {}
 
         if properties.reply_to:
             ch.basic_publish(
