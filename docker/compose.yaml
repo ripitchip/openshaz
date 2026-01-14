@@ -2,11 +2,23 @@ services:
   # ------------------------------------------------------
   # API & WORKERS (Custom Logic)
   # ------------------------------------------------------
+  frontend:
+    build: ../frontend
+    ports:
+      - "3001:80"
+    environment:
+      VITE_API_URL: http://localhost:8000
+    networks:
+      - internal
+    depends_on:
+      - api
+
   api:
     build: ./app/api
     ports:
       - "${FASTAPI_PORT}:${FASTAPI_PORT}"
     environment:
+      ENV: dev
       FASTAPI_HOST: ${FASTAPI_HOST}
       FASTAPI_PORT: ${FASTAPI_PORT}
       RABBITMQ_URL: ${RABBITMQ_URL}

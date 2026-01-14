@@ -10,9 +10,12 @@ from modules.repository import (
     send_similarity_task,
     upload_to_object_storage,
 )
+from fastapi.middleware.cors import CORSMiddleware
+
 
 HOST = os.getenv("FASTAPI_HOST", "0.0.0.0")
 PORT = int(os.getenv("FASTAPI_PORT", "8000"))
+ENV = os.getenv("ENV", "production")
 
 app = FastAPI(
     title="OpenShaz API",
@@ -20,6 +23,23 @@ app = FastAPI(
     version="1.0.0",
 )
 
+# Configure CORS based on environment
+if ENV == "dev":
+    # Development: allow all origins
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=["*"],
+        allow_methods=["*"],
+        allow_headers=["*"],
+    )
+else:
+    # Production: restrict origins (configure as needed)
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=[],  # Add your production domains here
+        allow_methods=["GET", "POST"],
+        allow_headers=["*"],
+    )
 
 @app.get("/health")
 async def health_check():

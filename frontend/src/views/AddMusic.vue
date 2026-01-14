@@ -15,7 +15,7 @@ const errorMessage = ref('')
 const handleFileChange = (event: Event) => {
   const target = event.target as HTMLInputElement
   if (target.files && target.files.length > 0) {
-    selectedFile.value = target.files[0]
+    selectedFile.value = target.files[0] || null
     errorMessage.value = ''
   }
 }

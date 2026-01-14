@@ -1,7 +1,27 @@
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
+
+// Environment configuration
+export const isDev = import.meta.env.DEV
+export const apiUrlFromEnv = import.meta.env.VITE_API_URL || ''
+
+// Debug log to verify environment wiring
+console.info('[OpenShaz] Env detected:', {
+    VITE_API_URL: apiUrlFromEnv || '(empty)',
+    isDev,
+})
+
+// Check if Settings page should be visible
+export const showSettings = computed(() => {
+    return isDev && !apiUrlFromEnv
+})
 
 // Backend configuration
-export const backendUrl = ref(localStorage.getItem('backend_url') || 'http://localhost:8000')
+export const backendUrl = ref(
+    apiUrlFromEnv || localStorage.getItem('backend_url') || 'http://localhost:8000'
+)
+
+// Log the resolved backend URL (visible in browser devtools, not Docker logs)
+console.info('[OpenShaz] Backend URL resolved to:', backendUrl.value)
 export const healthStatus = ref({ connected: false, message: '' })
 export const isCheckingHealth = ref(false)
 
