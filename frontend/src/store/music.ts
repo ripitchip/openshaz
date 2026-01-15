@@ -17,7 +17,7 @@ export const showSettings = computed(() => {
 
 // Backend configuration
 export const backendUrl = ref(
-    apiUrlFromEnv || localStorage.getItem('backend_url') || 'https://openshaz.foobarbaz.fr/api'
+    apiUrlFromEnv || localStorage.getItem('backend_url') || 'https://api.openshaz.foobarbaz.fr'
 )
 
 // Log the resolved backend URL (visible in browser devtools, not Docker logs)

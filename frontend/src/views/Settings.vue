@@ -35,7 +35,7 @@ const handleTest = async () => {
           <label class="text-sm font-medium text-gray-900">Backend URL</label>
           <Input 
             v-model="localUrl" 
-            placeholder="https://openshaz.foobarbaz.fr/api"
+            placeholder="https://api.openshaz.foobarbaz.fr"
             class="bg-white border-gray-300"
           />
         </div>
