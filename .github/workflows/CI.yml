@@ -15,6 +15,16 @@ jobs:
     steps:
       - uses: actions/checkout@v3
 
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+        with:
+          platforms: arm64
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+        with:
+          platforms: linux/arm64
+
       - name: Log in to the Container registry
         uses: docker/login-action@v2
         with:
@@ -29,6 +39,8 @@ jobs:
           file: docker/app/api/Dockerfile
           push: true
           platforms: linux/arm64
+          cache-from: type=registry,ref=ghcr.io/ripitchip/openshaz-api:buildcache
+          cache-to: type=registry,ref=ghcr.io/ripitchip/openshaz-api:buildcache,mode=max
           tags: |
             ghcr.io/ripitchip/openshaz-api:latest
             ghcr.io/ripitchip/openshaz-api:${{ github.sha }}
@@ -43,6 +55,8 @@ jobs:
           file: docker/app/worker/Dockerfile
           push: true
           platforms: linux/arm64
+          cache-from: type=registry,ref=ghcr.io/ripitchip/openshaz-worker:buildcache
+          cache-to: type=registry,ref=ghcr.io/ripitchip/openshaz-worker:buildcache,mode=max
           tags: |
             ghcr.io/ripitchip/openshaz-worker:latest
             ghcr.io/ripitchip/openshaz-worker:${{ github.sha }}
@@ -57,6 +71,8 @@ jobs:
           file: frontend/Dockerfile
           push: true
           platforms: linux/arm64
+          cache-from: type=registry,ref=ghcr.io/ripitchip/openshaz-frontend:buildcache
+          cache-to: type=registry,ref=ghcr.io/ripitchip/openshaz-frontend:buildcache,mode=max
           tags: |
             ghcr.io/ripitchip/openshaz-frontend:latest
             ghcr.io/ripitchip/openshaz-frontend:${{ github.sha }}
